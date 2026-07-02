@@ -1,0 +1,22 @@
+{
+  "description": "Example geometry parameters. Confirm sign and units for your own camera/projector setup.",
+  "units": {
+    "d": "mm",
+    "l": "mm",
+    "p": "projector pixels or equivalent phase-height period"
+  },
+  "geometry": {
+    "d": 300.0,
+    "l": 120.0,
+    "p": 5.0
+  },
+  "inverse_linear": {
+    "u": 0.0,
+    "v": 1.0,
+    "w": 0.0
+  },
+  "notes": [
+    "Triangulation uses h = sign * (delta_phi * p * d) / (delta_phi * p + 2*pi*l).",
+    "The exact sign and denominator convention are system-dependent; use --height-sign to flip if needed."
+  ]
+}
