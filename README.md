@@ -51,6 +51,27 @@ python scripts/run_gui.py
 
 입력 폴더와 출력 폴더를 선택하고 threshold를 조정한 뒤 `Run decode`를 누르면 같은 파이프라인이 실행됩니다.
 
+## EXE 빌드
+
+다른 Windows PC에서 사용할 실행 파일이 필요하면 프로젝트 루트에서 다음 파일을 실행합니다.
+
+```bat
+build.bat
+```
+
+빌드 스크립트는 `.venv`를 만들고 `requirements.txt`와 PyInstaller를 설치한 뒤 GUI 실행 파일과 보조 CLI 실행 파일을 생성합니다.
+
+```text
+dist/PCB_FPP_Decoder/PCB_FPP_Decoder.exe
+dist/PCB_FPP_Decoder_CLI/PCB_FPP_Decoder_CLI.exe
+```
+
+일반 사용자는 `dist/PCB_FPP_Decoder/PCB_FPP_Decoder.exe`를 더블클릭하면 됩니다. 프로젝트 루트에서 `PCB_FPP_Decoder.vbs`를 더블클릭해도 같은 GUI를 실행합니다. GUI에서 입력/출력 폴더, reference phase/scan, calibration config, height mode를 선택할 수 있으므로 일반 사용자가 터미널에서 직접 명령을 입력할 필요는 없습니다.
+
+다른 PC에 전달할 때는 `dist/PCB_FPP_Decoder` 폴더 전체를 복사하세요. 실행 PC에는 Python을 따로 설치하지 않아도 됩니다.
+
+보조 CLI exe는 자동화나 디버깅이 필요할 때만 사용하며, `python scripts/decode_scan.py`와 같은 옵션을 받습니다. GUI와 CLI 모두 디코딩 후 `height/height_heatmap.png`, `point_cloud/point_cloud.ply`, `point_cloud/point_cloud_preview.png`를 생성합니다.
+
 ## 출력 구조
 
 ```text
