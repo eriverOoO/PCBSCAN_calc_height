@@ -44,7 +44,9 @@ class DecoderGui:
         self.dark_var = StringVar(value="5")
         self.modulation_var = StringVar(value="0.05")
         self.median_filter_var = StringVar(value="3")
+        self.gray_decode_var = StringVar(value="auto")
         self.gray_threshold_var = StringVar(value="dynamic_raw")
+        self.gray_pair_contrast_var = StringVar(value="0.05")
         self.phase_convention_var = StringVar(value="default")
         self.phase_direction_var = StringVar(value="normal")
         self.height_mode_var = StringVar(value="relative")
@@ -128,10 +130,17 @@ class DecoderGui:
         self._entry_row(decode, "Median filter", self.median_filter_var)
         self._option_row(
             decode,
+            "Gray decode",
+            self.gray_decode_var,
+            ("auto", "normal", "inverted_pair"),
+        )
+        self._option_row(
+            decode,
             "Gray threshold",
             self.gray_threshold_var,
             ("dynamic_raw", "normalized_0p5"),
         )
+        self._entry_row(decode, "Gray pair contrast", self.gray_pair_contrast_var)
         self._option_row(
             decode,
             "Phase convention",
@@ -293,7 +302,9 @@ class DecoderGui:
             saturation_threshold=float(self.saturation_var.get()),
             dark_threshold=float(self.dark_var.get()),
             modulation_threshold=float(self.modulation_var.get()),
+            gray_decode_mode=self.gray_decode_var.get(),
             gray_threshold_mode=self.gray_threshold_var.get(),
+            gray_pair_min_contrast=float(self.gray_pair_contrast_var.get()),
             phase_convention=self.phase_convention_var.get(),
             phase_direction=self.phase_direction_var.get(),
             apply_half_period_correction=bool(self.correction_var.get()),

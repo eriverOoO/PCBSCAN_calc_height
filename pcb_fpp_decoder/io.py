@@ -151,33 +151,41 @@ def map_patterns_by_filename(input_dir: Path) -> dict[int, Path]:
     return mapping
 
 
-def load_pattern_set(input_dir: Path, expected_count: int = 14) -> PatternSet:
+def load_pattern_set(
+    input_dir: Path,
+    expected_count: int = 14,
+    required_ids: list[int] | range | None = None,
+    optional_ids: list[int] | range | None = None,
+) -> PatternSet:
     input_dir = input_dir.expanduser().resolve()
     if not input_dir.exists():
         raise FileNotFoundError(f"input folder does not exist: {input_dir}")
     if not input_dir.is_dir():
         raise NotADirectoryError(f"input path is not a folder: {input_dir}")
 
-    mapping = map_patterns_from_scan_log(input_dir)
-    if not all(i in mapping for i in range(expected_count)):
-        fallback = map_patterns_by_filename(input_dir)
-        merged = dict(fallback)
-        merged.update(mapping)
-        mapping = merged
+    required = list(required_ids) if required_ids is not None else list(range(expected_count))
+    optional = list(optional_ids) if optional_ids is not None else []
+    load_ids = sorted(set(required + optional))
 
-    missing = [i for i in range(expected_count) if i not in mapping]
+    fallback = map_patterns_by_filename(input_dir)
+    mapping = dict(fallback)
+    mapping.update(map_patterns_from_scan_log(input_dir))
+
+    missing = [i for i in required if i not in mapping]
     if missing:
         available = sorted(mapping)
         raise FileNotFoundError(
             "missing required pattern image(s): "
             f"{missing}. Available pattern ids: {available}. "
-            "Expected ids 0..13 from scan_log.json or filenames such as pattern_000.png."
+            "Expected required ids from scan_log.json or filenames such as pattern_000.png."
         )
 
     images: dict[int, np.ndarray] = {}
     files: dict[int, Path] = {}
     shape: tuple[int, int] | None = None
-    for pattern_id in range(expected_count):
+    for pattern_id in load_ids:
+        if pattern_id not in mapping:
+            continue
         path = mapping[pattern_id]
         image = read_image_gray(path)
         if image.ndim != 2:

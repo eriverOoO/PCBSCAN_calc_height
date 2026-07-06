@@ -28,6 +28,18 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("dynamic_raw", "normalized_0p5"),
         default="dynamic_raw",
     )
+    parser.add_argument(
+        "--gray-decode-mode",
+        choices=("auto", "normal", "inverted_pair"),
+        default="auto",
+        help="Use inverted Gray pairs when ids 14..21 are present, or force a mode",
+    )
+    parser.add_argument(
+        "--gray-pair-min-contrast",
+        type=float,
+        default=0.05,
+        help="Minimum normalized normal/inverted Gray difference for valid pair bits",
+    )
     parser.add_argument("--sine-source", choices=("corrected", "raw"), default="corrected")
     parser.add_argument(
         "--phase-convention",
@@ -97,7 +109,9 @@ def config_from_args(args: argparse.Namespace) -> DecodeConfig:
         saturation_threshold=args.saturation_threshold,
         dark_threshold=args.dark_threshold,
         modulation_threshold=args.modulation_threshold,
+        gray_decode_mode=args.gray_decode_mode,
         gray_threshold_mode=args.gray_threshold_mode,
+        gray_pair_min_contrast=args.gray_pair_min_contrast,
         sine_source=args.sine_source,
         phase_convention=args.phase_convention,
         phase_direction=args.phase_direction,

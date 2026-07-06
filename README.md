@@ -27,9 +27,11 @@ captures/scan_xxx/
 00 White, 01 Black
 02..09 Gray0..Gray7  (8-bit Gray code, Gray0=MSB)
 10 Sine_000, 11 Sine_090, 12 Sine_180, 13 Sine_270
+14..21 Gray0_inv..Gray7_inv  (optional inverted Gray pair)
 ```
 
 `scan_log.json`에 pattern id와 파일명이 있으면 우선 사용합니다. 없으면 `pattern_000.png` 또는 `00_White.png`처럼 파일명에서 숫자를 추출합니다.
+14..21 반전 Gray가 있으면 기본 `--gray-decode-mode auto`에서 자동으로 normal/inverted pair decoding을 사용합니다.
 
 ## CLI 실행
 
@@ -186,6 +188,8 @@ np.savez(
 
 - `--gray-threshold-mode dynamic_raw`: Gray 이미지를 `(White + Black) / 2` 동적 threshold와 비교합니다.
 - `--gray-threshold-mode normalized_0p5`: White/Black 보정 후 0.5 기준으로 Gray bit를 이진화합니다.
+- `--gray-decode-mode auto/normal/inverted_pair`: 14..21 반전 Gray가 있으면 `auto`에서 pair decoding을 사용합니다.
+- `--gray-pair-min-contrast 0.05`: normal/inverted Gray pair의 최소 normalized 차이입니다.
 - `--phase-convention default/negated/swapped`: 4-step PSP의 atan2 convention을 바꿉니다.
 - `--phase-direction normal/reverse`: projector X 방향이 preview에서 반대로 보일 때 사용합니다.
 - `--apply-half-period-correction`: Gray 경계와 PSP 경계 불일치에 대한 heuristic 보정입니다.

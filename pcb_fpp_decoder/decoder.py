@@ -49,6 +49,14 @@ PATTERN_LABELS = {
     11: "sine_090",
     12: "sine_180",
     13: "sine_270",
+    14: "gray0_inv",
+    15: "gray1_inv",
+    16: "gray2_inv",
+    17: "gray3_inv",
+    18: "gray4_inv",
+    19: "gray5_inv",
+    20: "gray6_inv",
+    21: "gray7_inv",
 }
 
 
@@ -60,7 +68,9 @@ class DecodeConfig:
     saturation_threshold: float = 250.0
     dark_threshold: float = 5.0
     modulation_threshold: float = 0.05
+    gray_decode_mode: str = "auto"
     gray_threshold_mode: str = "dynamic_raw"
+    gray_pair_min_contrast: float = 0.05
     sine_source: str = "corrected"
     phase_convention: str = "default"
     phase_direction: str = "normal"
@@ -97,6 +107,9 @@ class GrayDecodeResult:
     gray_bits: np.ndarray
     gray_code_value: np.ndarray
     stripe_order_k: np.ndarray
+    valid_mask: np.ndarray
+    confidence: np.ndarray
+    mode: str
 
 
 @dataclass
@@ -165,7 +178,12 @@ class PcbFppDecoder:
         self.config = config
 
     def load_scan(self, input_dir: Path) -> PatternSet:
-        return load_pattern_set(Path(input_dir), expected_count=14)
+        optional_inverse_ids = range(14, 14 + self.config.gray_bits)
+        return load_pattern_set(
+            Path(input_dir),
+            required_ids=range(14),
+            optional_ids=optional_inverse_ids,
+        )
 
     def compute_white_black_correction(self, patterns: PatternSet) -> CorrectionResult:
         white = patterns.images[0].astype(np.float32)
@@ -196,27 +214,73 @@ class PcbFppDecoder:
     def decode_gray_code(
         self, patterns: PatternSet, correction: CorrectionResult
     ) -> GrayDecodeResult:
-        mode = self.config.gray_threshold_mode
+        mode = self._resolve_gray_decode_mode(patterns)
         bit_planes: list[np.ndarray] = []
-        for offset in range(self.config.gray_bits):
-            pattern_id = 2 + offset
-            if mode == "dynamic_raw":
-                bit = patterns.images[pattern_id] > correction.threshold
-            elif mode == "normalized_0p5":
-                bit = correction.corrected[pattern_id] > 0.5
-            else:
-                raise ValueError(
-                    "gray_threshold_mode must be dynamic_raw or normalized_0p5"
+        confidence_planes: list[np.ndarray] = []
+        if mode == "inverted_pair":
+            for offset in range(self.config.gray_bits):
+                normal_id = 2 + offset
+                inverted_id = 14 + offset
+                diff = (
+                    correction.corrected[normal_id].astype(np.float32)
+                    - correction.corrected[inverted_id].astype(np.float32)
                 )
-            bit_planes.append(bit)
+                bit_planes.append(diff > 0.0)
+                confidence_planes.append(np.abs(diff).astype(np.float32))
+        elif mode == "normal":
+            threshold_mode = self.config.gray_threshold_mode
+            for offset in range(self.config.gray_bits):
+                pattern_id = 2 + offset
+                if threshold_mode == "dynamic_raw":
+                    bit = patterns.images[pattern_id] > correction.threshold
+                    confidence = np.abs(patterns.images[pattern_id] - correction.threshold)
+                    confidence = confidence / np.maximum(correction.signal, self.config.epsilon)
+                elif threshold_mode == "normalized_0p5":
+                    normalized = correction.corrected[pattern_id]
+                    bit = normalized > 0.5
+                    confidence = np.abs(normalized - 0.5)
+                else:
+                    raise ValueError(
+                        "gray_threshold_mode must be dynamic_raw or normalized_0p5"
+                    )
+                bit_planes.append(bit)
+                confidence_planes.append(confidence.astype(np.float32))
+        else:
+            raise ValueError("gray_decode_mode must be auto, normal, or inverted_pair")
 
         bits = np.stack(bit_planes, axis=-1)
+        confidence_stack = np.stack(confidence_planes, axis=-1)
+        confidence = np.min(confidence_stack, axis=-1).astype(np.float32)
+        if mode == "inverted_pair":
+            valid_mask = confidence >= self.config.gray_pair_min_contrast
+        else:
+            valid_mask = np.ones(patterns.shape, dtype=bool)
         gray_value, binary_value = decode_gray_bits(bits, bits=self.config.gray_bits)
         return GrayDecodeResult(
             gray_bits=bits.astype(np.uint8),
             gray_code_value=gray_value.astype(np.uint16),
             stripe_order_k=binary_value.astype(np.uint16),
+            valid_mask=valid_mask,
+            confidence=confidence,
+            mode=mode,
         )
+
+    def _resolve_gray_decode_mode(self, patterns: PatternSet) -> str:
+        mode = self.config.gray_decode_mode
+        if mode not in ("auto", "normal", "inverted_pair"):
+            raise ValueError("gray_decode_mode must be auto, normal, or inverted_pair")
+
+        inverted_ids = range(14, 14 + self.config.gray_bits)
+        has_inverted = all(pattern_id in patterns.images for pattern_id in inverted_ids)
+        if mode == "auto":
+            return "inverted_pair" if has_inverted else "normal"
+        if mode == "inverted_pair" and not has_inverted:
+            missing = [pattern_id for pattern_id in inverted_ids if pattern_id not in patterns.images]
+            raise ValueError(
+                "gray_decode_mode=inverted_pair requires inverted Gray pattern ids "
+                f"14..{13 + self.config.gray_bits}; missing {missing}"
+            )
+        return mode
 
     def compute_wrapped_phase(
         self, patterns: PatternSet, correction: CorrectionResult
@@ -269,7 +333,12 @@ class PcbFppDecoder:
             raise ValueError("phase_direction must be normal or reverse")
 
         absolute_raw = (TWO_PI * k_for_phase + phi_for_phase).astype(np.float32)
-        combined_mask = phase.valid_mask & phase.modulation_mask & np.isfinite(absolute_raw)
+        combined_mask = (
+            phase.valid_mask
+            & phase.modulation_mask
+            & gray.valid_mask
+            & np.isfinite(absolute_raw)
+        )
 
         corrected_k = k_for_phase.copy()
         correction_mask = np.zeros_like(combined_mask, dtype=bool)
@@ -513,7 +582,7 @@ class PcbFppDecoder:
         ):
             directory.mkdir(parents=True, exist_ok=True)
 
-        for pattern_id in range(14):
+        for pattern_id in sorted(result.patterns.images):
             label = PATTERN_LABELS.get(pattern_id, f"pattern_{pattern_id:03d}")
             save_float01_png(
                 corrected_dir / f"corrected_{pattern_id:02d}_{label}.png",
@@ -550,6 +619,13 @@ class PcbFppDecoder:
         np.save(gray_dir / "gray_bits.npy", result.gray.gray_bits)
         np.save(gray_dir / "gray_code_value.npy", result.gray.gray_code_value)
         np.save(gray_dir / "stripe_order_k.npy", result.gray.stripe_order_k)
+        np.save(gray_dir / "gray_confidence.npy", result.gray.confidence)
+        save_mask(gray_dir / "gray_valid_mask.png", result.gray.valid_mask)
+        save_preview_gray(
+            gray_dir / "gray_confidence_preview.png",
+            result.gray.confidence,
+            result.gray.valid_mask,
+        )
         save_preview_gray(
             gray_dir / "stripe_order_preview.png",
             result.gray.stripe_order_k.astype(np.float32),
@@ -791,6 +867,7 @@ class PcbFppDecoder:
         total = int(np.prod(shape))
         mask_stats = {
             "valid_mask_ratio": float(np.count_nonzero(correction.valid_mask) / total),
+            "gray_valid_mask_ratio": float(np.count_nonzero(gray.valid_mask) / total),
             "modulation_mask_ratio": float(np.count_nonzero(phase.modulation_mask) / total),
             "combined_mask_ratio": float(np.count_nonzero(absolute.combined_mask) / total),
             "saturation_pass_ratio": float(np.count_nonzero(correction.saturation_mask) / total),
@@ -808,7 +885,9 @@ class PcbFppDecoder:
                 "saturation_threshold": self.config.saturation_threshold,
                 "dark_threshold": self.config.dark_threshold,
                 "modulation_threshold": self.config.modulation_threshold,
+                "gray_decode_mode": self.config.gray_decode_mode,
                 "gray_threshold_mode": self.config.gray_threshold_mode,
+                "gray_pair_min_contrast": self.config.gray_pair_min_contrast,
             },
             "mask_coverage": mask_stats,
             "signal_stats": _array_stats(correction.signal, correction.valid_mask),
@@ -818,6 +897,9 @@ class PcbFppDecoder:
                 "min": int(np.nanmin(gray.stripe_order_k)),
                 "max": int(np.nanmax(gray.stripe_order_k)),
                 "gray_bits": self.config.gray_bits,
+                "decode_mode": gray.mode,
+                "valid_mask_ratio": float(np.count_nonzero(gray.valid_mask) / total),
+                "confidence_stats": _array_stats(gray.confidence, gray.valid_mask),
             },
             "phase": {
                 "phase_convention": self.config.phase_convention,

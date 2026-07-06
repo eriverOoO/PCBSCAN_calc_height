@@ -11,7 +11,13 @@ def _save(path: Path, array: np.ndarray) -> None:
     Image.fromarray(np.clip(array, 0, 255).astype(np.uint8)).save(path)
 
 
-def _write_synthetic_scan(folder: Path, width: int = 80, height: int = 48) -> None:
+def _write_synthetic_scan(
+    folder: Path,
+    width: int = 80,
+    height: int = 48,
+    inverted_gray: bool = False,
+    low_gray_for_pair: bool = False,
+) -> None:
     folder.mkdir(parents=True, exist_ok=True)
     y, x = np.indices((height, width))
     k = (x // 5).astype(np.uint16)
@@ -24,8 +30,14 @@ def _write_synthetic_scan(folder: Path, width: int = 80, height: int = 48) -> No
     gray = k ^ (k >> 1)
     for bit in range(8):
         mask = ((gray >> (7 - bit)) & 1).astype(bool)
-        image = np.where(mask, 220.0, 25.0)
+        if low_gray_for_pair:
+            image = np.where(mask, 120.0, 40.0)
+        else:
+            image = np.where(mask, 220.0, 25.0)
         _save(folder / f"pattern_{2 + bit:03d}.png", image)
+        if inverted_gray:
+            inverted = np.where(mask, 40.0, 120.0) if low_gray_for_pair else 255.0 - image
+            _save(folder / f"pattern_{14 + bit:03d}.png", inverted)
 
     mean = 125.0
     amp = 70.0
@@ -99,6 +111,31 @@ def test_reference_phase_subtraction_cancels_flat_projector_keystone(tmp_path):
     finite_height = result.height.height[result.height.mask]
     assert np.nanmax(np.abs(finite_height)) < 1e-6
     assert result.report["optical_setup"]["keystone_compensation"]["active"] is True
+
+
+def test_inverted_gray_pair_decodes_low_contrast_gray_patterns(tmp_path):
+    input_dir = tmp_path / "captures" / "scan_inv_gray" / "deg_0"
+    output_dir = tmp_path / "processed" / "scan_inv_gray" / "deg_0"
+    _write_synthetic_scan(input_dir, inverted_gray=True, low_gray_for_pair=True)
+
+    config = DecodeConfig(
+        gray_decode_mode="inverted_pair",
+        gray_pair_min_contrast=0.05,
+        min_signal=20,
+        saturation_threshold=250,
+        dark_threshold=5,
+        modulation_threshold=0.05,
+        median_filter=0,
+    )
+    result = PcbFppDecoder(config).decode(input_dir, output_dir)
+
+    assert result.gray.mode == "inverted_pair"
+    assert (output_dir / "gray" / "gray_valid_mask.png").exists()
+    assert (output_dir / "gray" / "gray_confidence.npy").exists()
+    assert result.report["stripe_order"]["decode_mode"] == "inverted_pair"
+    assert result.report["mask_coverage"]["gray_valid_mask_ratio"] > 0.95
+    assert result.report["mask_coverage"]["combined_mask_ratio"] > 0.95
+    assert int(result.gray.stripe_order_k.max()) == 15
 
 
 def test_metric_height_mode_requires_reference_phase(tmp_path):
