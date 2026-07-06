@@ -2,7 +2,7 @@
 setlocal
 
 set "ROOT=%~dp0"
-set "APP=%ROOT%dist\PCB_FPP_Simulator_Fixed\PCB_FPP_Simulator_Fixed.exe"
+set "APP=%ROOT%dist\PCB_FPP_Simulator_GUI\PCB_FPP_Simulator_GUI.exe"
 
 if not exist "%APP%" (
   echo PCB FPP Simulator app was not found:
