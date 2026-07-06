@@ -2,28 +2,36 @@ from __future__ import annotations
 
 import os
 import queue
+import sys
 import threading
 import traceback
 from pathlib import Path
-from tkinter import (
-    BOTH,
-    END,
-    LEFT,
-    RIGHT,
-    Button,
-    Checkbutton,
-    Entry,
-    Frame,
-    IntVar,
-    Label,
-    LabelFrame,
-    StringVar,
-    Tk,
-    filedialog,
-    messagebox,
-    scrolledtext,
-)
 
+try:
+    from tkinter import (
+        BOTH,
+        END,
+        LEFT,
+        RIGHT,
+        Button,
+        Checkbutton,
+        Entry,
+        Frame,
+        IntVar,
+        Label,
+        LabelFrame,
+        StringVar,
+        Tk,
+        filedialog,
+        messagebox,
+        scrolledtext,
+    )
+
+    TK_IMPORT_ERROR: Exception | None = None
+except Exception as exc:
+    TK_IMPORT_ERROR = exc
+
+from .sim_cli import main as cli_main
 from .simulator import PcbFppSimulator, SyntheticPcbConfig
 
 
@@ -216,6 +224,16 @@ class SimulatorGui:
 
 
 def main() -> int:
+    if TK_IMPORT_ERROR is not None:
+        default_output = Path.cwd() / "simulations" / "virtual_pcb"
+        args = sys.argv[1:] or ["--output", str(default_output)]
+        print(
+            "Tk GUI is not available in this Python runtime; "
+            "running simulator CLI mode instead."
+        )
+        print(f"Tk import error: {TK_IMPORT_ERROR}")
+        return cli_main(args)
+
     SimulatorGui().run()
     return 0
 

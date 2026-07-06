@@ -6,8 +6,8 @@ cd /d "%~dp0"
 
 set "VENV_DIR=.venv"
 set "PYTHON_EXE=%VENV_DIR%\Scripts\python.exe"
-set "SIM_GUI_NAME=PCB_FPP_Simulator"
-set "SIM_CLI_NAME=PCB_FPP_Simulator_CLI"
+set "SIM_GUI_NAME=PCB_FPP_Simulator_Fixed"
+set "SIM_CLI_NAME=PCB_FPP_Simulator_CLI_Fixed"
 set "BUILD_DIR=%TEMP%\PCB_FPP_Simulator_pyinstaller_%RANDOM%"
 set "DIST_DIR=dist"
 
@@ -38,8 +38,8 @@ if not exist "%DIST_DIR%" mkdir "%DIST_DIR%"
 
 set "PYI_COMMON=--noconfirm --onedir --distpath %DIST_DIR% --workpath %BUILD_DIR% --specpath %BUILD_DIR% --collect-data matplotlib --hidden-import matplotlib.backends.backend_agg --hidden-import mpl_toolkits.mplot3d --hidden-import scipy.ndimage --hidden-import PIL.Image --hidden-import cv2 --exclude-module=pytest --exclude-module=matplotlib.tests --exclude-module=scipy.tests"
 
-echo [3/4] Building simulator no-console GUI executable...
-"%PYTHON_EXE%" -m PyInstaller %PYI_COMMON% --name "%SIM_GUI_NAME%" --windowed "scripts\run_simulator_gui.py"
+echo [3/4] Building simulator executable...
+"%PYTHON_EXE%" -m PyInstaller %PYI_COMMON% --name "%SIM_GUI_NAME%" --console "scripts\run_simulator_gui.py"
 if errorlevel 1 goto :build_error
 
 echo [4/4] Building simulator CLI executable...
@@ -48,7 +48,7 @@ if errorlevel 1 goto :build_error
 
 echo.
 echo Build complete.
-echo Simulator GUI EXE: %DIST_DIR%\%SIM_GUI_NAME%\%SIM_GUI_NAME%.exe
+echo Simulator EXE: %DIST_DIR%\%SIM_GUI_NAME%\%SIM_GUI_NAME%.exe
 echo Simulator CLI EXE: %DIST_DIR%\%SIM_CLI_NAME%\%SIM_CLI_NAME%.exe
 echo.
 exit /b 0
