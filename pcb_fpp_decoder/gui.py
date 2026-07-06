@@ -37,6 +37,7 @@ class DecoderGui:
         self.root.title("PCB FPP Decoder")
         self.root.minsize(760, 680)
         self.input_var = StringVar()
+        self.input_180_var = StringVar()
         self.output_var = StringVar()
         self.min_signal_var = StringVar(value="20")
         self.saturation_var = StringVar(value="250")
@@ -51,6 +52,9 @@ class DecoderGui:
         self.reference_phase_var = StringVar()
         self.calibration_config_var = StringVar()
         self.height_sign_var = StringVar(value="1")
+        self.fusion_mode_var = StringVar(value="modulation-weighted")
+        self.fusion_center_var = StringVar()
+        self.fusion_transform_var = StringVar()
         self.max_points_var = StringVar(value="300000")
         self.detrend_var = IntVar(value=1)
         self.correction_var = IntVar(value=1)
@@ -65,6 +69,12 @@ class DecoderGui:
         folders = LabelFrame(outer, text="Input / Output", padx=8, pady=6)
         folders.pack(fill="x", pady=(0, 8))
         self._folder_row(folders, "Input scan folder", self.input_var, self._choose_input)
+        self._folder_row(
+            folders,
+            "180 scan folder",
+            self.input_180_var,
+            self._choose_input_180,
+        )
         self._folder_row(folders, "Output folder", self.output_var, self._choose_output)
 
         height = LabelFrame(outer, text="3D / Height", padx=8, pady=6)
@@ -94,6 +104,19 @@ class DecoderGui:
             self._choose_calibration_config,
         )
         self._option_row(height, "Height sign", self.height_sign_var, ("1", "-1"))
+        self._option_row(
+            height,
+            "Fusion mode",
+            self.fusion_mode_var,
+            ("modulation-weighted", "average"),
+        )
+        self._entry_row(height, "Fusion center x,y", self.fusion_center_var)
+        self._file_row(
+            height,
+            "Fusion transform",
+            self.fusion_transform_var,
+            self._choose_fusion_transform,
+        )
         self._entry_row(height, "Max 3D points", self.max_points_var)
 
         decode = LabelFrame(outer, text="Decode Settings", padx=8, pady=6)
@@ -174,6 +197,11 @@ class DecoderGui:
                 input_path = Path(folder)
                 self.output_var.set(str(Path.cwd() / "processed" / input_path.parent.name / input_path.name))
 
+    def _choose_input_180(self) -> None:
+        folder = filedialog.askdirectory(title="Choose 180-degree scan folder")
+        if folder:
+            self.input_180_var.set(folder)
+
     def _choose_output(self) -> None:
         folder = filedialog.askdirectory(title="Choose output folder")
         if folder:
@@ -205,6 +233,19 @@ class DecoderGui:
         if filename:
             self.calibration_config_var.set(filename)
 
+    def _choose_fusion_transform(self) -> None:
+        filename = filedialog.askopenfilename(
+            title="Choose fusion transform",
+            filetypes=(
+                ("Transform files", "*.json *.npy *.npz"),
+                ("JSON", "*.json"),
+                ("NumPy", "*.npy *.npz"),
+                ("All files", "*.*"),
+            ),
+        )
+        if filename:
+            self.fusion_transform_var.set(filename)
+
     def _run_decode(self) -> None:
         try:
             input_text = self.input_var.get().strip()
@@ -215,6 +256,7 @@ class DecoderGui:
                 raise ValueError("Output folder is required.")
 
             input_dir = Path(input_text)
+            input_180_dir = self._optional_path(self.input_180_var)
             output_dir = Path(output_text)
             config = self._config_from_fields()
         except Exception as exc:
@@ -223,7 +265,9 @@ class DecoderGui:
 
         self.run_button.config(state="disabled")
         thread = threading.Thread(
-            target=self._decode_worker, args=(input_dir, output_dir, config), daemon=True
+            target=self._decode_worker,
+            args=(input_dir, input_180_dir, output_dir, config),
+            daemon=True,
         )
         thread.start()
 
@@ -232,6 +276,8 @@ class DecoderGui:
         reference_scan = self._optional_path(self.reference_scan_var)
         reference_phase = self._optional_path(self.reference_phase_var)
         calibration_config = self._optional_path(self.calibration_config_var)
+        fusion_transform = self._optional_path(self.fusion_transform_var)
+        fusion_center = self._parse_fusion_center()
 
         if height_mode != "relative" and reference_scan is None and reference_phase is None:
             raise ValueError(
@@ -258,23 +304,50 @@ class DecoderGui:
             reference_phase=reference_phase,
             calibration_config=calibration_config,
             height_sign=float(self.height_sign_var.get()),
+            fusion_mode=self.fusion_mode_var.get(),
+            fusion_center=fusion_center,
+            fusion_transform=fusion_transform,
             max_point_cloud_points=int(self.max_points_var.get()),
         )
+
+    def _parse_fusion_center(self) -> tuple[float, float] | None:
+        text = self.fusion_center_var.get().strip()
+        if not text:
+            return None
+        normalized = text.replace(";", ",").replace(" ", ",")
+        parts = [part for part in normalized.split(",") if part]
+        if len(parts) != 2:
+            raise ValueError("Fusion center must be blank or two numbers: x,y")
+        return float(parts[0]), float(parts[1])
 
     def _optional_path(self, var: StringVar) -> Path | None:
         text = var.get().strip()
         return Path(text) if text else None
 
-    def _decode_worker(self, input_dir: Path, output_dir: Path, config: DecodeConfig) -> None:
+    def _decode_worker(
+        self,
+        input_dir: Path,
+        input_180_dir: Path | None,
+        output_dir: Path,
+        config: DecodeConfig,
+    ) -> None:
         self.messages.put(f"Decoding {input_dir}\n")
+        if input_180_dir is not None:
+            self.messages.put(f"Fusing 180-degree scan: {input_180_dir}\n")
         self.messages.put(f"Height mode: {config.height_mode}\n")
         try:
-            result = PcbFppDecoder(config).decode(input_dir, output_dir)
-            ratio = result.report["mask_coverage"]["combined_mask_ratio"]
+            if input_180_dir is None:
+                result = PcbFppDecoder(config).decode(input_dir, output_dir)
+                ratio = result.report["mask_coverage"]["combined_mask_ratio"]
+                ratio_label = "Combined valid ratio"
+            else:
+                result = PcbFppDecoder(config).decode_fused(input_dir, input_180_dir, output_dir)
+                ratio = result.report["fusion"]["coverage"]["fused_valid_ratio"]
+                ratio_label = "Fused valid ratio"
             self.messages.put(
                 "Done.\n"
                 f"Output: {output_dir}\n"
-                f"Combined valid ratio: {ratio:.3f}\n"
+                f"{ratio_label}: {ratio:.3f}\n"
                 f"Heat map: {output_dir / 'height' / 'height_heatmap.png'}\n"
                 f"Point cloud: {output_dir / 'point_cloud' / 'point_cloud.ply'}\n"
                 f"3D preview: {output_dir / 'point_cloud' / 'point_cloud_preview.png'}\n"

@@ -41,6 +41,25 @@ python scripts/decode_scan.py \
 
 Windows PowerShell에서는 줄바꿈 대신 한 줄로 실행하거나 백틱(`` ` ``)을 사용하세요.
 
+## 0도 / 180도 데이터 병합
+
+회전 디스크에서 PCB를 정방향으로 한 번, 180도 회전 후 한 번 촬영한 경우 `--input-180`을 추가하면 두 scan을 독립적으로 복원한 뒤 최종 높이 지도를 병합합니다.
+
+```bash
+python scripts/decode_scan.py \
+  --input captures/scan_xxx/deg_0 \
+  --input-180 captures/scan_xxx/deg_180 \
+  --output processed/scan_xxx/fused \
+  --height-mode triangulation \
+  --reference-phase processed/reference/deg_0/phase/absolute_phase.npy \
+  --calibration-config examples/calibration_config.example.json \
+  --fusion-mode modulation-weighted
+```
+
+`deg_180` 높이 지도는 기본적으로 이미지 중심 `((width-1)/2, (height-1)/2)` 기준 180도 회전 행렬 `[-1, 0, 2cx; 0, -1, 2cy]`로 `deg_0` 좌표계에 정렬됩니다. 회전 중심을 알고 있으면 `--fusion-center X Y`를 지정할 수 있고, 보정 타겟으로 구한 2x3 affine 또는 3x3 homography가 있으면 `--fusion-transform transform.json` 또는 `.npy/.npz` 파일을 지정할 수 있습니다.
+
+최종 fusion 규칙은 픽셀 단위입니다. 한쪽만 valid이면 그 값을 사용하고, 양쪽 모두 valid이면 기본값 `modulation-weighted`에서 sine modulation 신뢰도 가중 평균을 사용합니다. 단순 평균이 필요하면 `--fusion-mode average`를 사용하세요. fusion 실행 시 개별 scan 결과는 `views/deg_0`, `views/deg_180`에 저장되고, 최종 결과는 출력 루트의 `height/height_fused.npy`, `height/height_heatmap.png`, `point_cloud/point_cloud.ply`, `masks/source_*.png`에 저장됩니다.
+
 ## 간단 GUI
 
 로컬 폴더 선택 UI가 필요하면 다음을 실행합니다.

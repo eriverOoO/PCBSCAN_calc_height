@@ -73,6 +73,9 @@ class DecodeConfig:
     reference_scan: Path | None = None
     calibration_config: Path | None = None
     height_sign: float = 1.0
+    fusion_mode: str = "modulation-weighted"
+    fusion_center: tuple[float, float] | None = None
+    fusion_transform: Path | None = None
     save_debug: bool = False
     epsilon: float = 1e-6
     max_point_cloud_points: int = 300_000
@@ -137,6 +140,21 @@ class DecodeResult:
     absolute: AbsolutePhaseResult
     height: HeightResult
     calibration: Calibration | None
+    report: dict[str, Any]
+
+
+@dataclass
+class FusionResult:
+    deg0: DecodeResult
+    deg180: DecodeResult
+    height: HeightResult
+    confidence: np.ndarray
+    source_map: np.ndarray
+    aligned_height_180: np.ndarray
+    aligned_mask_180: np.ndarray
+    aligned_confidence_180: np.ndarray
+    transform_matrix: np.ndarray
+    transform_kind: str
     report: dict[str, Any]
 
 
@@ -346,6 +364,114 @@ class PcbFppDecoder:
             stats=stats,
         )
 
+    def _decode_in_memory(self, input_dir: Path) -> DecodeResult:
+        patterns = self.load_scan(input_dir)
+        correction = self.compute_white_black_correction(patterns)
+        gray = self.decode_gray_code(patterns, correction)
+        phase = self.compute_wrapped_phase(patterns, correction)
+        absolute = self.unwrap_absolute_phase(gray, phase)
+        calibration = load_calibration(self.config.calibration_config)
+        height = self.compute_height(absolute, calibration)
+        report = self._build_report(patterns, correction, gray, phase, absolute, height, calibration)
+        return DecodeResult(
+            patterns=patterns,
+            correction=correction,
+            gray=gray,
+            phase=phase,
+            absolute=absolute,
+            height=height,
+            calibration=calibration,
+            report=report,
+        )
+
+    def fuse_decode_results(self, deg0: DecodeResult, deg180: DecodeResult) -> FusionResult:
+        h0 = deg0.height.height.astype(np.float32)
+        mask0 = deg0.height.mask & np.isfinite(h0)
+        confidence0 = _height_confidence(deg0)
+
+        h180 = deg180.height.height.astype(np.float32)
+        mask180 = deg180.height.mask & np.isfinite(h180)
+        confidence180 = _height_confidence(deg180)
+
+        matrix, kind = self._fusion_transform(deg0.patterns.shape, deg180.patterns.shape)
+        aligned_h180, aligned_mask180 = _warp_float_with_mask(
+            h180,
+            mask180,
+            deg0.patterns.shape,
+            matrix,
+            kind,
+        )
+        aligned_confidence180, _ = _warp_float_with_mask(
+            confidence180,
+            mask180,
+            deg0.patterns.shape,
+            matrix,
+            kind,
+        )
+
+        fused_height, fused_mask, source_map, fused_confidence = _fuse_height_maps(
+            h0,
+            mask0,
+            confidence0,
+            aligned_h180,
+            aligned_mask180,
+            aligned_confidence180,
+            mode=self.config.fusion_mode,
+            epsilon=self.config.epsilon,
+        )
+        message = (
+            "0/180 degree scans fused after spatial alignment; "
+            f"fusion mode={self.config.fusion_mode}"
+        )
+        if not deg0.height.metric:
+            message += "; source height is non-metric relative phase preview"
+        height = HeightResult(
+            height=fused_height,
+            mask=fused_mask,
+            mode=f"fused-{deg0.height.mode}",
+            metric=deg0.height.metric and deg180.height.metric,
+            filename="height_fused.npy",
+            message=message,
+            units=deg0.height.units if deg0.height.units == deg180.height.units else "mixed",
+            stats=_array_stats(fused_height, fused_mask),
+        )
+        report = self._build_fusion_report(
+            deg0,
+            deg180,
+            height,
+            source_map,
+            matrix,
+            kind,
+        )
+        return FusionResult(
+            deg0=deg0,
+            deg180=deg180,
+            height=height,
+            confidence=fused_confidence,
+            source_map=source_map,
+            aligned_height_180=aligned_h180,
+            aligned_mask_180=aligned_mask180,
+            aligned_confidence_180=aligned_confidence180,
+            transform_matrix=matrix,
+            transform_kind=kind,
+            report=report,
+        )
+
+    def decode_fused(
+        self,
+        input_dir_0: Path,
+        input_dir_180: Path,
+        output_dir: Path,
+    ) -> FusionResult:
+        output_dir = Path(output_dir).expanduser().resolve()
+        deg0 = self._decode_in_memory(input_dir_0)
+        deg180 = self._decode_in_memory(input_dir_180)
+        fusion = self.fuse_decode_results(deg0, deg180)
+        self.save_outputs(deg0, output_dir / "views" / "deg_0")
+        self.save_outputs(deg180, output_dir / "views" / "deg_180")
+        self.save_fusion_outputs(fusion, output_dir)
+        return fusion
+
     def save_outputs(self, result: DecodeResult, output_dir: Path) -> None:
         output_dir = Path(output_dir).expanduser().resolve()
         corrected_dir = output_dir / "corrected"
@@ -454,27 +580,169 @@ class PcbFppDecoder:
         with (output_dir / "decode_report.json").open("w", encoding="utf-8") as f:
             json.dump(result.report, f, indent=2, ensure_ascii=False)
 
-    def decode(self, input_dir: Path, output_dir: Path) -> DecodeResult:
-        patterns = self.load_scan(input_dir)
-        correction = self.compute_white_black_correction(patterns)
-        gray = self.decode_gray_code(patterns, correction)
-        phase = self.compute_wrapped_phase(patterns, correction)
-        absolute = self.unwrap_absolute_phase(gray, phase)
-        calibration = load_calibration(self.config.calibration_config)
-        height = self.compute_height(absolute, calibration)
-        report = self._build_report(patterns, correction, gray, phase, absolute, height, calibration)
-        result = DecodeResult(
-            patterns=patterns,
-            correction=correction,
-            gray=gray,
-            phase=phase,
-            absolute=absolute,
-            height=height,
-            calibration=calibration,
-            report=report,
+    def save_fusion_outputs(self, fusion: FusionResult, output_dir: Path) -> None:
+        output_dir = Path(output_dir).expanduser().resolve()
+        height_dir = output_dir / "height"
+        masks_dir = output_dir / "masks"
+        fusion_dir = output_dir / "fusion"
+        point_dir = output_dir / "point_cloud"
+        for directory in (height_dir, masks_dir, fusion_dir, point_dir):
+            directory.mkdir(parents=True, exist_ok=True)
+
+        np.save(height_dir / fusion.height.filename, fusion.height.height)
+        np.save(height_dir / "height.npy", fusion.height.height)
+        save_colormap(
+            height_dir / "height_heatmap.png",
+            fusion.height.height,
+            fusion.height.mask,
+            cmap="turbo",
+            with_colorbar=True,
+            title="Fused height",
         )
+        save_colormap(
+            height_dir / "height_heatmap_colorbar.png",
+            fusion.height.height,
+            fusion.height.mask,
+            cmap="turbo",
+            with_colorbar=True,
+            title="Fused height",
+        )
+        save_colormap(
+            height_dir / "height_fused_preview.png",
+            fusion.height.height,
+            fusion.height.mask,
+            cmap="turbo",
+        )
+
+        source_map = fusion.source_map
+        save_mask(masks_dir / "fused_mask.png", fusion.height.mask)
+        save_mask(masks_dir / "source_deg_0_only.png", source_map == 1)
+        save_mask(masks_dir / "source_deg_180_only.png", source_map == 2)
+        save_mask(masks_dir / "source_overlap.png", source_map == 3)
+        save_mask(masks_dir / "source_missing.png", source_map == 0)
+        np.save(masks_dir / "source_map.npy", source_map)
+
+        np.save(fusion_dir / "aligned_height_180.npy", fusion.aligned_height_180)
+        np.save(fusion_dir / "aligned_mask_180.npy", fusion.aligned_mask_180)
+        np.save(fusion_dir / "confidence.npy", fusion.confidence)
+        np.save(fusion_dir / "aligned_confidence_180.npy", fusion.aligned_confidence_180)
+        np.save(fusion_dir / "transform_matrix.npy", fusion.transform_matrix)
+        save_colormap(
+            fusion_dir / "aligned_height_180_preview.png",
+            fusion.aligned_height_180,
+            fusion.aligned_mask_180,
+            cmap="turbo",
+        )
+        save_colormap(
+            fusion_dir / "confidence_preview.png",
+            fusion.confidence,
+            fusion.height.mask,
+            cmap="viridis",
+        )
+
+        ply_count = write_ascii_ply(
+            point_dir / "point_cloud.ply",
+            fusion.height.height,
+            fusion.height.mask,
+            max_points=self.config.max_point_cloud_points,
+        )
+        save_point_cloud_preview(
+            point_dir / "point_cloud_preview.png",
+            fusion.height.height,
+            fusion.height.mask,
+        )
+        fusion.report["point_cloud"] = {
+            "ply_vertices_written": ply_count,
+            "max_point_cloud_points": self.config.max_point_cloud_points,
+        }
+
+        with (output_dir / "decode_report.json").open("w", encoding="utf-8") as f:
+            json.dump(fusion.report, f, indent=2, ensure_ascii=False)
+        with (output_dir / "fusion_report.json").open("w", encoding="utf-8") as f:
+            json.dump(fusion.report, f, indent=2, ensure_ascii=False)
+
+    def decode(self, input_dir: Path, output_dir: Path) -> DecodeResult:
+        result = self._decode_in_memory(input_dir)
         self.save_outputs(result, output_dir)
         return result
+
+    def _fusion_transform(
+        self,
+        target_shape: tuple[int, int],
+        source_shape: tuple[int, int],
+    ) -> tuple[np.ndarray, str]:
+        if self.config.fusion_transform is not None:
+            matrix = _load_transform_matrix(self.config.fusion_transform)
+            if matrix.shape == (2, 3):
+                return matrix.astype(np.float32), "affine"
+            if matrix.shape == (3, 3):
+                return matrix.astype(np.float32), "homography"
+            raise ValueError(
+                "fusion transform must be a 2x3 affine matrix or 3x3 homography"
+            )
+
+        if target_shape != source_shape:
+            raise ValueError(
+                "0 degree and 180 degree scans must have the same image shape unless "
+                "--fusion-transform is provided"
+            )
+        height, width = target_shape
+        if self.config.fusion_center is None:
+            cx = (width - 1) / 2.0
+            cy = (height - 1) / 2.0
+        else:
+            cx, cy = self.config.fusion_center
+        matrix = np.array([[-1.0, 0.0, 2.0 * cx], [0.0, -1.0, 2.0 * cy]], dtype=np.float32)
+        return matrix, "rotation_180"
+
+    def _build_fusion_report(
+        self,
+        deg0: DecodeResult,
+        deg180: DecodeResult,
+        height: HeightResult,
+        source_map: np.ndarray,
+        matrix: np.ndarray,
+        transform_kind: str,
+    ) -> dict[str, Any]:
+        total = int(np.prod(source_map.shape))
+        coverage = {
+            "deg_0_only_ratio": float(np.count_nonzero(source_map == 1) / total),
+            "deg_180_only_ratio": float(np.count_nonzero(source_map == 2) / total),
+            "overlap_ratio": float(np.count_nonzero(source_map == 3) / total),
+            "fused_valid_ratio": float(np.count_nonzero(source_map != 0) / total),
+            "missing_ratio": float(np.count_nonzero(source_map == 0) / total),
+        }
+        return {
+            "input_dir": str(deg0.patterns.input_dir),
+            "input_dir_180": str(deg180.patterns.input_dir),
+            "image_shape": {"height": source_map.shape[0], "width": source_map.shape[1]},
+            "config": _jsonable_config(self.config),
+            "fusion": {
+                "mode": self.config.fusion_mode,
+                "transform_kind": transform_kind,
+                "transform_matrix": matrix.tolist(),
+                "coverage": coverage,
+            },
+            "views": {
+                "deg_0": {
+                    "input_dir": str(deg0.patterns.input_dir),
+                    "combined_mask_ratio": deg0.report["mask_coverage"]["combined_mask_ratio"],
+                    "height": deg0.report["height"],
+                },
+                "deg_180": {
+                    "input_dir": str(deg180.patterns.input_dir),
+                    "combined_mask_ratio": deg180.report["mask_coverage"]["combined_mask_ratio"],
+                    "height": deg180.report["height"],
+                },
+            },
+            "height": {
+                "mode": height.mode,
+                "metric": height.metric,
+                "units": height.units,
+                "message": height.message,
+                "stats": height.stats,
+            },
+        }
 
     def _build_report(
         self,
@@ -684,3 +952,157 @@ def _jsonable_config(config: DecodeConfig) -> dict[str, Any]:
         if isinstance(value, Path):
             data[key] = str(value)
     return data
+
+
+def _height_confidence(result: DecodeResult) -> np.ndarray:
+    confidence = np.asarray(result.phase.modulation, dtype=np.float32)
+    valid = result.height.mask & np.isfinite(result.height.height) & np.isfinite(confidence)
+    return np.where(valid, np.maximum(confidence, 0.0), 0.0).astype(np.float32)
+
+
+def _fuse_height_maps(
+    height0: np.ndarray,
+    mask0: np.ndarray,
+    confidence0: np.ndarray,
+    height180: np.ndarray,
+    mask180: np.ndarray,
+    confidence180: np.ndarray,
+    mode: str,
+    epsilon: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    valid0 = mask0 & np.isfinite(height0)
+    valid180 = mask180 & np.isfinite(height180)
+    only0 = valid0 & ~valid180
+    only180 = ~valid0 & valid180
+    both = valid0 & valid180
+
+    fused = np.full(height0.shape, np.nan, dtype=np.float32)
+    fused[only0] = height0[only0]
+    fused[only180] = height180[only180]
+
+    if mode == "average":
+        fused[both] = 0.5 * (height0[both] + height180[both])
+    elif mode == "modulation-weighted":
+        w0 = np.where(both, confidence0, 0.0).astype(np.float32)
+        w180 = np.where(both, confidence180, 0.0).astype(np.float32)
+        weight_sum = w0 + w180
+        weighted = np.divide(
+            w0 * height0 + w180 * height180,
+            np.maximum(weight_sum, epsilon),
+            out=np.full(height0.shape, np.nan, dtype=np.float32),
+        )
+        fallback = 0.5 * (height0 + height180)
+        fused[both] = np.where(weight_sum[both] > epsilon, weighted[both], fallback[both])
+    else:
+        raise ValueError("fusion_mode must be average or modulation-weighted")
+
+    source_map = np.zeros(height0.shape, dtype=np.uint8)
+    source_map[only0] = 1
+    source_map[only180] = 2
+    source_map[both] = 3
+
+    fused_mask = source_map != 0
+    fused_confidence = np.zeros(height0.shape, dtype=np.float32)
+    fused_confidence[only0] = confidence0[only0]
+    fused_confidence[only180] = confidence180[only180]
+    fused_confidence[both] = np.maximum(confidence0[both], confidence180[both])
+    return fused.astype(np.float32), fused_mask, source_map, fused_confidence
+
+
+def _warp_float_with_mask(
+    image: np.ndarray,
+    mask: np.ndarray,
+    target_shape: tuple[int, int],
+    matrix: np.ndarray,
+    transform_kind: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    if _is_exact_180_flip(matrix, image.shape, target_shape):
+        return np.rot90(image, 2).astype(np.float32), np.rot90(mask, 2).astype(bool)
+
+    valid = mask & np.isfinite(image)
+    values = np.where(valid, image, 0.0).astype(np.float32)
+    weights = valid.astype(np.float32)
+    warped_values = _warp_array(values, target_shape, matrix, transform_kind)
+    warped_weights = _warp_array(weights, target_shape, matrix, transform_kind)
+    warped_mask = warped_weights > 0.5
+    warped = np.divide(
+        warped_values,
+        np.maximum(warped_weights, 1e-6),
+        out=np.zeros(target_shape, dtype=np.float32),
+    )
+    return np.where(warped_mask, warped, np.nan).astype(np.float32), warped_mask
+
+
+def _warp_array(
+    image: np.ndarray,
+    target_shape: tuple[int, int],
+    matrix: np.ndarray,
+    transform_kind: str,
+) -> np.ndarray:
+    try:
+        import cv2  # type: ignore
+    except Exception as exc:
+        raise RuntimeError(
+            "OpenCV is required for custom fusion transforms; install opencv-python"
+        ) from exc
+
+    height, width = target_shape
+    if transform_kind in ("rotation_180", "affine"):
+        return cv2.warpAffine(
+            image.astype(np.float32),
+            matrix[:2, :].astype(np.float32),
+            (width, height),
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0,
+        ).astype(np.float32)
+    if transform_kind == "homography":
+        return cv2.warpPerspective(
+            image.astype(np.float32),
+            matrix.astype(np.float32),
+            (width, height),
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0,
+        ).astype(np.float32)
+    raise ValueError(f"unsupported transform kind: {transform_kind}")
+
+
+def _is_exact_180_flip(
+    matrix: np.ndarray,
+    source_shape: tuple[int, int],
+    target_shape: tuple[int, int],
+) -> bool:
+    if source_shape != target_shape or matrix.shape != (2, 3):
+        return False
+    height, width = target_shape
+    expected = np.array(
+        [[-1.0, 0.0, width - 1.0], [0.0, -1.0, height - 1.0]],
+        dtype=np.float32,
+    )
+    return bool(np.allclose(matrix, expected, atol=1e-6))
+
+
+def _load_transform_matrix(path: Path) -> np.ndarray:
+    path = Path(path).expanduser().resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"fusion transform file does not exist: {path}")
+
+    if path.suffix.lower() == ".npy":
+        return np.asarray(np.load(path), dtype=np.float32)
+    if path.suffix.lower() == ".npz":
+        archive = np.load(path)
+        for key in ("matrix", "homography", "affine"):
+            if key in archive:
+                return np.asarray(archive[key], dtype=np.float32)
+        first_key = next(iter(archive.files))
+        return np.asarray(archive[first_key], dtype=np.float32)
+
+    with path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    if isinstance(data, dict):
+        for key in ("matrix", "transform", "homography", "affine"):
+            if key in data:
+                data = data[key]
+                break
+    return np.asarray(data, dtype=np.float32)

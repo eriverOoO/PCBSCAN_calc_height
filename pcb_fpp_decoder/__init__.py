@@ -1,5 +1,5 @@
 """PCB structured-light / FPP post-processing toolkit."""
 
-from .decoder import DecodeConfig, PcbFppDecoder
+from .decoder import DecodeConfig, FusionResult, PcbFppDecoder
 
-__all__ = ["DecodeConfig", "PcbFppDecoder"]
+__all__ = ["DecodeConfig", "FusionResult", "PcbFppDecoder"]
