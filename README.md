@@ -1,10 +1,19 @@
 # PCB Structured-Light / FPP Decoder
 
-PRO4500 / LightCrafter 4500 계열 structured-light 시스템에서 촬영한 14장 패턴 세트를 후처리하는 Python 도구입니다. 원본 `captures` 폴더는 읽기 전용으로 다루고, 모든 결과는 별도 `processed` 폴더에 저장합니다.
+PRO4500 / LightCrafter 4500 계열 구조광 시스템에서 촬영한 14장 패턴 세트를 전처리하고, Gray code + 4-step phase shifting으로 PCB 높이 지도를 복원하는 Python 도구입니다. 원본 `captures` 폴더는 읽기 전용으로 두고 모든 결과는 별도 `processed` 폴더에 저장합니다.
+
+## 핵심 운영 원칙
+
+30도 정도 기울여 투사하면 PCB 위 패턴은 가까운 쪽이 좁고 먼 쪽이 넓은 사다리꼴로 맺힙니다. 이 시스템은 프로젝터 이미지를 억지로 펴는 keystone pre-distortion을 하지 않습니다.
+
+- 초점 흐려짐: PRO4500/렌즈/리그의 Scheimpflug 또는 수동 초점 정렬로 하드웨어에서 해결합니다. 디코더는 초점이 맞지 않은 영역을 소프트웨어로 deblur하지 않습니다.
+- 사다리꼴 기하 왜곡: 같은 프로젝터/카메라/리그 상태에서 먼저 촬영한 평면 reference phase를 사용해 `delta_phi = phi_object - phi_reference`로 제거합니다.
+- Metric height: `triangulation` 또는 `inverse-linear` 모드는 reference phase가 없으면 실행하지 않고 에러를 냅니다.
+- 위치별 줄무늬 간격: 30도 투사로 `p`, `d`, `l`이 위치별로 달라지는 경우 `.npz` calibration 파일에 `p`, `d`, `l` 맵을 넣어 사용할 수 있습니다.
 
 ## 입력
 
-입력 폴더는 다음 중 하나처럼 14장 이미지와 선택적 `scan_log.json`을 포함합니다.
+입력 폴더에는 14장 이미지와 선택적 `scan_log.json`이 들어갑니다.
 
 ```text
 captures/scan_xxx/deg_0/
@@ -20,9 +29,11 @@ captures/scan_xxx/
 10 Sine_000, 11 Sine_090, 12 Sine_180, 13 Sine_270
 ```
 
-`scan_log.json`에 pattern id와 파일명이 있으면 그것을 우선 사용합니다. 없으면 `pattern_000.png` 또는 `00_White.png`처럼 파일명에서 숫자를 추출합니다.
+`scan_log.json`에 pattern id와 파일명이 있으면 우선 사용합니다. 없으면 `pattern_000.png` 또는 `00_White.png`처럼 파일명에서 숫자를 추출합니다.
 
 ## CLI 실행
+
+상대 위상 preview만 만들 때:
 
 ```bash
 python scripts/decode_scan.py \
@@ -39,11 +50,23 @@ python scripts/decode_scan.py \
   --median-filter 3
 ```
 
-Windows PowerShell에서는 줄바꿈 대신 한 줄로 실행하거나 백틱(`` ` ``)을 사용하세요.
+기준 평면을 빼서 metric height를 계산할 때:
 
-## 0도 / 180도 데이터 병합
+```bash
+python scripts/decode_scan.py \
+  --input captures/scan_xxx/deg_0 \
+  --output processed/scan_xxx/deg_0 \
+  --height-mode triangulation \
+  --reference-phase processed/reference/deg_0/phase/absolute_phase.npy \
+  --calibration-config examples/calibration_config.example.json \
+  --height-sign 1
+```
 
-회전 디스크에서 PCB를 정방향으로 한 번, 180도 회전 후 한 번 촬영한 경우 `--input-180`을 추가하면 두 scan을 독립적으로 복원한 뒤 최종 높이 지도를 병합합니다.
+Windows PowerShell에서는 줄바꿈 문자가 다르므로 한 줄로 실행하거나 백틱(`)을 사용하세요.
+
+## 0도 / 180도 데이터 융합
+
+PCB를 정방향으로 한 번, 180도 회전해 한 번 촬영한 경우 `--input-180`을 추가하면 두 높이 지도를 정렬하고 융합합니다.
 
 ```bash
 python scripts/decode_scan.py \
@@ -56,19 +79,17 @@ python scripts/decode_scan.py \
   --fusion-mode modulation-weighted
 ```
 
-`deg_180` 높이 지도는 기본적으로 이미지 중심 `((width-1)/2, (height-1)/2)` 기준 180도 회전 행렬 `[-1, 0, 2cx; 0, -1, 2cy]`로 `deg_0` 좌표계에 정렬됩니다. 회전 중심을 알고 있으면 `--fusion-center X Y`를 지정할 수 있고, 보정 타겟으로 구한 2x3 affine 또는 3x3 homography가 있으면 `--fusion-transform transform.json` 또는 `.npy/.npz` 파일을 지정할 수 있습니다.
+`deg_180` 높이 지도는 기본적으로 이미지 중심 `((width-1)/2, (height-1)/2)` 기준 180도 회전 행렬로 `deg_0` 좌표계에 정렬됩니다. 회전 중심을 알고 있으면 `--fusion-center X Y`를 지정하고, 보정 타겟으로 구한 2x3 affine 또는 3x3 homography가 있으면 `--fusion-transform transform.json` 또는 `.npy/.npz` 파일을 지정합니다.
 
 최종 fusion 규칙은 픽셀 단위입니다. 한쪽만 valid이면 그 값을 사용하고, 양쪽 모두 valid이면 기본값 `modulation-weighted`에서 sine modulation 신뢰도 가중 평균을 사용합니다. 단순 평균이 필요하면 `--fusion-mode average`를 사용하세요. fusion 실행 시 개별 scan 결과는 `views/deg_0`, `views/deg_180`에 저장되고, 최종 결과는 출력 루트의 `height/height_fused.npy`, `height/height_heatmap.png`, `point_cloud/point_cloud.ply`, `masks/source_*.png`에 저장됩니다.
 
-## 간단 GUI
-
-로컬 폴더 선택 UI가 필요하면 다음을 실행합니다.
+## GUI
 
 ```bash
 python scripts/run_gui.py
 ```
 
-입력 폴더와 출력 폴더를 선택하고 threshold를 조정한 뒤 `Run decode`를 누르면 같은 파이프라인이 실행됩니다.
+입력/출력 폴더, reference phase/scan, calibration config, height mode, threshold를 선택한 뒤 `Run decode`를 누르면 같은 파이프라인이 실행됩니다. `reference`, `triangulation`, `inverse-linear` 모드에서는 reference phase 또는 reference scan이 필요합니다.
 
 ## EXE 빌드
 
@@ -85,11 +106,7 @@ dist/PCB_FPP_Decoder/PCB_FPP_Decoder.exe
 dist/PCB_FPP_Decoder_CLI/PCB_FPP_Decoder_CLI.exe
 ```
 
-일반 사용자는 `dist/PCB_FPP_Decoder/PCB_FPP_Decoder.exe`를 더블클릭하면 됩니다. 프로젝트 루트에서 `PCB_FPP_Decoder.vbs`를 더블클릭해도 같은 GUI를 실행합니다. GUI에서 입력/출력 폴더, reference phase/scan, calibration config, height mode를 선택할 수 있으므로 일반 사용자가 터미널에서 직접 명령을 입력할 필요는 없습니다.
-
-다른 PC에 전달할 때는 `dist/PCB_FPP_Decoder` 폴더 전체를 복사하세요. 실행 PC에는 Python을 따로 설치하지 않아도 됩니다.
-
-보조 CLI exe는 자동화나 디버깅이 필요할 때만 사용하며, `python scripts/decode_scan.py`와 같은 옵션을 받습니다. GUI와 CLI 모두 디코딩 후 `height/height_heatmap.png`, `point_cloud/point_cloud.ply`, `point_cloud/point_cloud_preview.png`를 생성합니다.
+일반 사용자는 `dist/PCB_FPP_Decoder/PCB_FPP_Decoder.exe`를 더블클릭하면 됩니다. 프로젝트 루트에서 `PCB_FPP_Decoder.vbs`를 더블클릭해도 같은 GUI를 실행합니다. 다른 PC에 전달할 때는 `dist/PCB_FPP_Decoder` 폴더 전체를 복사하세요. 실행 PC에는 Python을 따로 설치하지 않아도 됩니다.
 
 ## 출력 구조
 
@@ -116,6 +133,8 @@ processed/<scan_id>/deg_0/
   height/
     height.npy
     height_relative.npy 또는 height_mm.npy
+    delta_phase.npy                 # reference 사용 시 저장
+    delta_phase_preview.png         # reference 사용 시 저장
     height_heatmap.png
     height_heatmap_colorbar.png
   point_cloud/
@@ -124,36 +143,44 @@ processed/<scan_id>/deg_0/
   decode_report.json
 ```
 
+`decode_report.json`에는 `optical_setup` 항목이 기록됩니다. 여기에서 reference subtraction 활성 여부, reference 경로, `height/delta_phase.npy` 저장 여부, 위치별 calibration map 로딩 여부를 확인할 수 있습니다.
+
 ## Height 해석
 
-단일 14장 촬영만으로는 metric height(mm)를 안정적으로 계산할 수 없습니다. 기본 `relative` 모드는 absolute phase 또는 detrended phase를 높이처럼 시각화한 preview입니다. `decode_report.json`에도 `metric calibration missing; output is relative phase-derived preview, not physical height`가 기록됩니다.
+단일 14장 촬영만으로는 metric height(mm)를 안정적으로 계산할 수 없습니다. 기본 `relative` 모드는 absolute phase 또는 detrended phase를 높이처럼 시각화한 preview입니다.
 
-Metric height를 얻으려면 다음 중 하나가 필요합니다.
+Metric height를 얻으려면 다음이 필요합니다.
 
-- 기준 평면 scan 또는 `reference_absolute_phase.npy`
+- 평평한 기준면 scan 또는 `absolute_phase.npy`
 - camera/projector calibration
 - baseline `l`, camera-reference distance `d`, pattern period 또는 등가 주기 `p`
-- 또는 다중 reference plane으로 얻은 inverse-linear calibration 파라미터 `u, v, w`
-
-예시 설정은 `examples/calibration_config.example.json`에 있습니다.
-
-```bash
-python scripts/decode_scan.py \
-  --input captures/scan_xxx/deg_0 \
-  --output processed/scan_xxx/deg_0 \
-  --height-mode triangulation \
-  --reference-phase processed/reference/deg_0/phase/absolute_phase.npy \
-  --calibration-config examples/calibration_config.example.json \
-  --height-sign 1
-```
+- 또는 다중 reference plane으로 얻은 inverse-linear 파라미터 `u`, `v`, `w`
 
 삼각측량식은 다음 convention을 사용합니다.
 
 ```text
 h = sign * (delta_phi * p * d) / (delta_phi * p + 2*pi*l)
+delta_phi = phi_object - phi_reference
 ```
 
 실제 시스템의 부호와 분모 convention은 geometry에 따라 달라질 수 있으므로 `--height-sign -1`과 calibration 파일의 단위를 확인하세요.
+
+## 위치별 Calibration Map
+
+JSON 파일은 스칼라 `d`, `l`, `p` 값을 담는 용도에 적합합니다. 투사 각도 때문에 위치별 줄무늬 간격 변화가 크면 `.npz` 파일을 사용해 같은 이미지 shape로 `d`, `l`, `p` 배열을 저장하세요.
+
+```python
+import numpy as np
+
+np.savez(
+    "calibration_maps.npz",
+    d=np.full((H, W), 300.0, dtype=np.float32),
+    l=np.full((H, W), 120.0, dtype=np.float32),
+    p=p_map.astype(np.float32),
+)
+```
+
+배열은 phase image shape로 broadcast 가능해야 합니다. 예를 들어 `p`는 `(H, W)`, `d`와 `l`은 스칼라도 가능합니다.
 
 ## 주요 옵션
 
@@ -161,22 +188,13 @@ h = sign * (delta_phi * p * d) / (delta_phi * p + 2*pi*l)
 - `--gray-threshold-mode normalized_0p5`: White/Black 보정 후 0.5 기준으로 Gray bit를 이진화합니다.
 - `--phase-convention default/negated/swapped`: 4-step PSP의 atan2 convention을 바꿉니다.
 - `--phase-direction normal/reverse`: projector X 방향이 preview에서 반대로 보일 때 사용합니다.
-- `--apply-half-period-correction`: Gray 경계와 PSP 경계 불일치에 대한 heuristic 보정을 적용합니다. 이는 정확한 Cai 2020 알고리즘 구현이 아니라 경계 연속성 기반 heuristic입니다.
+- `--apply-half-period-correction`: Gray 경계와 PSP 경계 불일치에 대한 heuristic 보정입니다.
 - `--median-filter 3`: height/relative map에 median filter를 적용합니다.
 - `--detrend`: valid pixel 전체에 plane fitting을 수행해 tilt를 제거합니다.
 
-## Threshold 튜닝
-
-- `min_signal`: White-Black 차이가 너무 낮은 shadow/black component 영역을 제거합니다.
-- `modulation_threshold`: sine contrast가 낮은 픽셀을 제거합니다. corrected sine 기준 기본값은 `0.05`입니다.
-- `saturation_threshold`: solder highlight처럼 white image에서 포화된 영역을 제거합니다.
-- `median_filter`: isolated outlier가 많을 때 3 또는 5를 시도합니다.
-
-PCB는 specular solder, black component, silk/metal 경계, shadow 때문에 잘못 decoded된 픽셀이 생기기 쉽습니다. 실제 height 해석 전에는 `combined_mask.png`, `stripe_order_preview.png`, `wrapped_phase_preview.png`, `absolute_phase_preview.png`를 반드시 확인하세요.
+PCB의 specular solder, black component, silk/metal 경계, shadow 때문에 잘못 decode되는 픽셀이 생길 수 있습니다. 실제 height 해석 전 `combined_mask.png`, `stripe_order_preview.png`, `wrapped_phase_preview.png`, `absolute_phase_preview.png`, `delta_phase_preview.png`를 확인하세요.
 
 ## 테스트
-
-실제 이미지 없이 synthetic 14장 scan을 생성해 동작을 검증합니다.
 
 ```bash
 pytest

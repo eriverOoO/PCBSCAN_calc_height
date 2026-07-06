@@ -1,5 +1,10 @@
 {
   "description": "Example geometry parameters. Confirm sign and units for your own camera/projector setup.",
+  "projector": {
+    "tilt_degrees": 30.0,
+    "focus_compensation": "Scheimpflug hardware/manual focus; do not software-deblur",
+    "keystone_compensation": "Use reference phase subtraction, not projector image pre-distortion"
+  },
   "units": {
     "d": "mm",
     "l": "mm",
@@ -17,6 +22,8 @@
   },
   "notes": [
     "Triangulation uses h = sign * (delta_phi * p * d) / (delta_phi * p + 2*pi*l).",
+    "delta_phi must be phi_object - phi_reference from the same projector/camera geometry.",
+    "If the 30-degree projector tilt causes position-dependent stripe pitch, store d/l/p as arrays in an NPZ calibration file with keys d, l, and p.",
     "The exact sign and denominator convention are system-dependent; use --height-sign to flip if needed."
   ]
 }

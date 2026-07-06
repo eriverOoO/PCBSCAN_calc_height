@@ -45,10 +45,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--height-mode",
         choices=("relative", "reference", "triangulation", "inverse-linear"),
         default="relative",
+        help=(
+            "relative uses absolute phase preview only; reference/triangulation/"
+            "inverse-linear require a flat reference phase to cancel projector keystone"
+        ),
     )
-    parser.add_argument("--reference-scan", type=Path)
-    parser.add_argument("--reference-phase", type=Path)
-    parser.add_argument("--calibration-config", type=Path)
+    parser.add_argument(
+        "--reference-scan",
+        type=Path,
+        help="Flat PCB/reference-plane scan folder used for phi_object - phi_reference",
+    )
+    parser.add_argument(
+        "--reference-phase",
+        type=Path,
+        help="Precomputed flat reference absolute_phase.npy used for keystone cancellation",
+    )
+    parser.add_argument(
+        "--calibration-config",
+        type=Path,
+        help="JSON/NPZ calibration. Triangulation accepts scalar or map d/l/p parameters.",
+    )
     parser.add_argument("--height-sign", type=float, default=1.0, choices=(-1.0, 1.0))
     parser.add_argument(
         "--fusion-mode",

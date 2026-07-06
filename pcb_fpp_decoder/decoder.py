@@ -129,6 +129,8 @@ class HeightResult:
     message: str
     units: str = "phase"
     stats: dict[str, float] = field(default_factory=dict)
+    reference_used: bool = False
+    delta_phase: np.ndarray | None = None
 
 
 @dataclass
@@ -302,21 +304,34 @@ class PcbFppDecoder:
         units = "phase"
         filename = "height_relative.npy"
         message = "metric calibration missing; output is relative phase-derived preview, not physical height"
+        reference_used = False
+        delta_phase: np.ndarray | None = None
 
         reference = self._load_reference_phase_if_available()
-        if mode == "relative" or reference is None:
+        if mode == "relative":
             height = phi.copy()
         else:
+            if reference is None:
+                raise ValueError(
+                    f"{mode} height mode requires --reference-phase or --reference-scan. "
+                    "The flat reference phase is required to cancel projector keystone "
+                    "with delta_phi = phi_object - phi_reference."
+                )
             if reference.shape != phi.shape:
                 raise ValueError(
                     f"reference phase shape {reference.shape} does not match object phase {phi.shape}"
                 )
-            delta_phi = phi - reference.astype(np.float32)
+            reference = reference.astype(np.float32)
+            mask &= np.isfinite(reference)
+            delta_phi = np.where(mask, phi - reference, np.nan).astype(np.float32)
+            delta_phase = delta_phi
+            reference_used = True
             if mode == "reference":
                 height = self.config.height_sign * delta_phi
                 filename = "height_relative.npy"
                 message = (
-                    "reference phase applied; no metric model supplied, so output is delta phase"
+                    "reference phase applied as phi_object - phi_reference; projector "
+                    "keystone is cancelled in delta phase, but no metric model was supplied"
                 )
             elif mode == "triangulation":
                 if calibration is None or not calibration.is_loaded:
@@ -330,7 +345,10 @@ class PcbFppDecoder:
                 metric = True
                 units = "calibration_units"
                 filename = "height_mm.npy"
-                message = f"triangulation height computed with {params}"
+                message = (
+                    "triangulation height computed from reference delta phase; "
+                    f"projector keystone handled by reference subtraction/calibration; {params}"
+                )
             elif mode == "inverse-linear":
                 if calibration is None or not calibration.is_loaded:
                     raise ValueError("inverse-linear mode requires --calibration-config")
@@ -338,7 +356,10 @@ class PcbFppDecoder:
                 metric = True
                 units = "calibration_units"
                 filename = "height_mm.npy"
-                message = "inverse-linear height computed from calibration parameters"
+                message = (
+                    "inverse-linear height computed from reference delta phase; projector "
+                    "keystone handled by reference subtraction/calibration"
+                )
             else:
                 raise ValueError(
                     "height_mode must be relative, reference, triangulation, or inverse-linear"
@@ -349,8 +370,7 @@ class PcbFppDecoder:
             height = self._median_filter(height, self.config.median_filter, mask)
         if self.config.detrend:
             height = self._detrend_plane(height, mask)
-            if not metric:
-                message += "; robust plane detrend applied"
+            message += "; robust plane detrend applied"
 
         stats = _array_stats(height, mask)
         return HeightResult(
@@ -362,6 +382,8 @@ class PcbFppDecoder:
             message=message,
             units=units,
             stats=stats,
+            reference_used=reference_used,
+            delta_phase=delta_phase,
         )
 
     def _decode_in_memory(self, input_dir: Path) -> DecodeResult:
@@ -434,6 +456,7 @@ class PcbFppDecoder:
             message=message,
             units=deg0.height.units if deg0.height.units == deg180.height.units else "mixed",
             stats=_array_stats(fused_height, fused_mask),
+            reference_used=deg0.height.reference_used and deg180.height.reference_used,
         )
         report = self._build_fusion_report(
             deg0,
@@ -538,6 +561,14 @@ class PcbFppDecoder:
             np.save(height_dir / "height.npy", result.height.height)
         else:
             np.save(height_dir / "height.npy", result.height.height)
+        if result.height.delta_phase is not None:
+            np.save(height_dir / "delta_phase.npy", result.height.delta_phase)
+            save_colormap(
+                height_dir / "delta_phase_preview.png",
+                result.height.delta_phase,
+                result.height.mask,
+                cmap="coolwarm",
+            )
         save_colormap(
             height_dir / "height_heatmap.png",
             result.height.height,
@@ -741,7 +772,9 @@ class PcbFppDecoder:
                 "units": height.units,
                 "message": height.message,
                 "stats": height.stats,
+                "reference_used": height.reference_used,
             },
+            "optical_setup": deg0.report.get("optical_setup"),
         }
 
     def _build_report(
@@ -798,11 +831,13 @@ class PcbFppDecoder:
                 "units": height.units,
                 "message": height.message,
                 "stats": height.stats,
+                "reference_used": height.reference_used,
             },
             "calibration": {
                 "used": bool(calibration and calibration.is_loaded),
                 "path": str(calibration.path) if calibration and calibration.path else None,
             },
+            "optical_setup": _optical_setup_report(self.config, calibration, height),
         }
         return report
 
@@ -952,6 +987,48 @@ def _jsonable_config(config: DecodeConfig) -> dict[str, Any]:
         if isinstance(value, Path):
             data[key] = str(value)
     return data
+
+
+def _optical_setup_report(
+    config: DecodeConfig,
+    calibration: Calibration | None,
+    height: HeightResult,
+) -> dict[str, Any]:
+    tilt_degrees = None
+    loaded_arrays: dict[str, list[int]] = {}
+    if calibration is not None:
+        tilt_degrees = calibration.get_float(
+            "projector.tilt_degrees",
+            "projector_tilt_degrees",
+            "optics.projector_tilt_degrees",
+            "optics.tilt_degrees",
+        )
+        loaded_arrays = {
+            key: list(np.asarray(value).shape) for key, value in calibration.arrays.items()
+        }
+
+    return {
+        "projector_tilt_degrees": tilt_degrees,
+        "focus_compensation": (
+            "hardware/Scheimpflug/manual focus; this decoder does not software-deblur "
+            "out-of-focus regions"
+        ),
+        "keystone_compensation": {
+            "method": "reference_phase_subtraction",
+            "formula": "delta_phi = phi_object - phi_reference",
+            "active": height.reference_used,
+            "reference_phase": str(config.reference_phase) if config.reference_phase else None,
+            "reference_scan": str(config.reference_scan) if config.reference_scan else None,
+            "delta_phase_file": "height/delta_phase.npy"
+            if height.delta_phase is not None
+            else None,
+            "software_keystone_predistortion": False,
+        },
+        "calibration_maps": {
+            "position_dependent_triangulation_supported": True,
+            "loaded_npz_arrays": loaded_arrays,
+        },
+    }
 
 
 def _height_confidence(result: DecodeResult) -> np.ndarray:

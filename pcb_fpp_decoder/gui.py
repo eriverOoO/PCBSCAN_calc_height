@@ -335,6 +335,8 @@ class DecoderGui:
         if input_180_dir is not None:
             self.messages.put(f"Fusing 180-degree scan: {input_180_dir}\n")
         self.messages.put(f"Height mode: {config.height_mode}\n")
+        if config.height_mode != "relative":
+            self.messages.put("Reference phase subtraction: enabled\n")
         try:
             if input_180_dir is None:
                 result = PcbFppDecoder(config).decode(input_dir, output_dir)

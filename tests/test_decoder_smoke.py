@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from pcb_fpp_decoder.decoder import DecodeConfig, PcbFppDecoder
@@ -75,6 +76,47 @@ def test_synthetic_scan_end_to_end(tmp_path):
     assert result.gray.stripe_order_k.shape == (48, 80)
     assert result.report["mask_coverage"]["combined_mask_ratio"] > 0.95
     assert int(result.gray.stripe_order_k.max()) == 15
+
+
+def test_reference_phase_subtraction_cancels_flat_projector_keystone(tmp_path):
+    input_dir = tmp_path / "captures" / "scan_ref" / "deg_0"
+    ref_output = tmp_path / "processed" / "reference"
+    output_dir = tmp_path / "processed" / "object"
+    _write_synthetic_scan(input_dir)
+
+    PcbFppDecoder(DecodeConfig()).decode(input_dir, ref_output)
+    reference_phase = ref_output / "phase" / "absolute_phase.npy"
+    config = DecodeConfig(
+        height_mode="reference",
+        reference_phase=reference_phase,
+        median_filter=0,
+        detrend=False,
+    )
+    result = PcbFppDecoder(config).decode(input_dir, output_dir)
+
+    assert result.height.reference_used
+    assert (output_dir / "height" / "delta_phase.npy").exists()
+    finite_height = result.height.height[result.height.mask]
+    assert np.nanmax(np.abs(finite_height)) < 1e-6
+    assert result.report["optical_setup"]["keystone_compensation"]["active"] is True
+
+
+def test_metric_height_mode_requires_reference_phase(tmp_path):
+    input_dir = tmp_path / "captures" / "scan_no_ref" / "deg_0"
+    output_dir = tmp_path / "processed" / "scan_no_ref"
+    calibration_path = tmp_path / "calibration.json"
+    _write_synthetic_scan(input_dir)
+    calibration_path.write_text(
+        '{"geometry": {"d": 300.0, "l": 120.0, "p": 5.0}}',
+        encoding="utf-8",
+    )
+
+    config = DecodeConfig(
+        height_mode="triangulation",
+        calibration_config=calibration_path,
+    )
+    with pytest.raises(ValueError, match="requires --reference-phase"):
+        PcbFppDecoder(config).decode(input_dir, output_dir)
 
 
 def test_fused_0_180_scan_fills_shadow_region(tmp_path):
