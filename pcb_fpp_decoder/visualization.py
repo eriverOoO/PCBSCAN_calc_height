@@ -19,6 +19,16 @@ def _prepare_matplotlib() -> None:
     matplotlib.use("Agg", force=True)
 
 
+def _pyplot_or_none():
+    try:
+        _prepare_matplotlib()
+        import matplotlib.pyplot as plt
+
+        return plt
+    except Exception:
+        return None
+
+
 def finite_percentiles(
     image: np.ndarray, low: float = 1.0, high: float = 99.0
 ) -> tuple[float, float]:
@@ -63,15 +73,17 @@ def save_colormap(
     with_colorbar: bool = False,
     title: str | None = None,
 ) -> None:
-    _prepare_matplotlib()
-    import matplotlib.pyplot as plt
-
     display = np.asarray(image, dtype=np.float32)
     if mask is not None:
         display = np.where(mask, display, np.nan)
     lo, hi = finite_percentiles(display)
 
     path.parent.mkdir(parents=True, exist_ok=True)
+    plt = _pyplot_or_none()
+    if plt is None:
+        save_float01_png(path, normalize_for_preview(display))
+        return
+
     if with_colorbar:
         fig, ax = plt.subplots(figsize=(7.0, 5.0), dpi=150)
         im = ax.imshow(display, cmap=cmap, vmin=lo, vmax=hi)
@@ -98,8 +110,10 @@ def save_wrapped_phase_preview(path: Path, wrapped_phase: np.ndarray, mask: np.n
     if mask is not None:
         phase_0_1 = np.where(mask, phase_0_1, 0.0)
 
-    _prepare_matplotlib()
-    import matplotlib.pyplot as plt
+    plt = _pyplot_or_none()
+    if plt is None:
+        save_float01_png(path, phase_0_1)
+        return
 
     rgba = plt.get_cmap("twilight")(phase_0_1)
     save_uint8_image(path, (rgba[..., :3] * 255.0).astype(np.uint8))
@@ -142,12 +156,14 @@ def save_point_cloud_preview(
     mask: np.ndarray,
     max_points: int = 50_000,
 ) -> None:
-    _prepare_matplotlib()
-    import matplotlib.pyplot as plt
-
     valid = np.isfinite(z) & mask
     rows, cols = np.nonzero(valid)
     path.parent.mkdir(parents=True, exist_ok=True)
+    plt = _pyplot_or_none()
+    if plt is None:
+        save_preview_gray(path, z, mask)
+        return
+
     fig = plt.figure(figsize=(7.0, 5.0), dpi=150)
     ax = fig.add_subplot(111, projection="3d")
     if rows.size:
