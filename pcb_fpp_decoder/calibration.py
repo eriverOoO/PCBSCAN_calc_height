@@ -9,6 +9,10 @@ import numpy as np
 
 CalibrationValue = float | np.ndarray
 
+MORENO_TAUBIN_RECOMMENDED_PATCH_SIZE_PX = 47
+MORENO_TAUBIN_MIN_POSE_COUNT = 6
+PCB_REPROJECTION_TARGET_MAX_PX = 0.35
+
 
 @dataclass
 class Calibration:
@@ -143,6 +147,45 @@ def inverse_linear_height(
     return height.astype(np.float32)
 
 
+def structured_light_calibration_report(calibration: Calibration | None) -> dict[str, Any]:
+    if calibration is None or not calibration.data:
+        return {"available": False, "method": None}
+
+    section = _first_dict(
+        calibration.data,
+        "structured_light_calibration",
+        "moreno_taubin",
+        "projector_calibration",
+    )
+    if section is None:
+        return {"available": False, "method": None}
+
+    method = str(section.get("method", "moreno_taubin_local_homography"))
+    warnings: list[str] = []
+    capture = _capture_report(section, warnings)
+    local_homography = _local_homography_report(section, warnings)
+    reprojection_error = _reprojection_error_report(section, warnings)
+
+    return {
+        "available": True,
+        "method": method,
+        "pipeline": [
+            "data_acquisition",
+            "camera_intrinsics",
+            "gray_code_decoding",
+            "corner_local_homography",
+            "projector_corner_estimation",
+            "projector_intrinsics",
+            "stereo_extrinsics",
+        ],
+        "capture": capture,
+        "local_homography": local_homography,
+        "reprojection_error": reprojection_error,
+        "pcb_reflection_tuning": section.get("pcb_reflection_tuning", {}),
+        "warnings": warnings,
+    }
+
+
 def _as_broadcastable_parameter(
     value: CalibrationValue,
     target_shape: tuple[int, ...],
@@ -173,4 +216,132 @@ def _parameter_summary(value: CalibrationValue) -> dict[str, Any]:
         "shape": list(array.shape),
         "min": float(np.min(finite)),
         "max": float(np.max(finite)),
+    }
+
+
+def _first_dict(data: dict[str, Any], *names: str) -> dict[str, Any] | None:
+    for name in names:
+        value = _deep_get(data, name)
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def _optional_float(data: dict[str, Any], *names: str) -> float | None:
+    for name in names:
+        value = _deep_get(data, name)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _optional_bool(data: dict[str, Any], *names: str) -> bool | None:
+    for name in names:
+        value = _deep_get(data, name)
+        if isinstance(value, bool):
+            return value
+    return None
+
+
+def _capture_report(section: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
+    pose_count = _optional_float(section, "capture.pose_count", "pose_count")
+    board_locked = _optional_bool(
+        section,
+        "capture.board_locked_during_sequence",
+        "board_locked_during_sequence",
+    )
+    full_white_required = _optional_bool(
+        section,
+        "capture.full_white_required",
+        "full_white_required",
+    )
+    gray_code_axes = _deep_get(section, "capture.gray_code_axes")
+
+    pose_count_ok = None
+    if pose_count is not None:
+        pose_count_ok = pose_count >= MORENO_TAUBIN_MIN_POSE_COUNT
+        if not pose_count_ok:
+            warnings.append(
+                "capture.pose_count is below the recommended minimum for stable calibration"
+            )
+
+    if board_locked is False:
+        warnings.append("capture.board_locked_during_sequence should be true")
+    if full_white_required is False:
+        warnings.append("capture.full_white_required should be true")
+
+    return {
+        "pose_count": int(pose_count) if pose_count is not None else None,
+        "minimum_pose_count": MORENO_TAUBIN_MIN_POSE_COUNT,
+        "pose_count_ok": pose_count_ok,
+        "board_locked_during_sequence": board_locked,
+        "full_white_required": full_white_required,
+        "gray_code_axes": gray_code_axes,
+    }
+
+
+def _local_homography_report(section: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
+    patch_size = _optional_float(
+        section,
+        "local_homography.patch_size_px",
+        "local_homography.patch_size",
+        "patch_size_px",
+    )
+    min_decoded_points = _optional_float(
+        section,
+        "local_homography.min_decoded_points",
+        "min_decoded_points",
+    )
+
+    patch_size_ok = None
+    if patch_size is not None:
+        patch_size_ok = int(patch_size) == MORENO_TAUBIN_RECOMMENDED_PATCH_SIZE_PX
+        if not patch_size_ok:
+            warnings.append("local_homography.patch_size_px differs from the 47 px default")
+
+    return {
+        "patch_size_px": int(patch_size) if patch_size is not None else None,
+        "recommended_patch_size_px": MORENO_TAUBIN_RECOMMENDED_PATCH_SIZE_PX,
+        "patch_size_ok": patch_size_ok,
+        "min_decoded_points": (
+            int(min_decoded_points) if min_decoded_points is not None else None
+        ),
+    }
+
+
+def _reprojection_error_report(section: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
+    error_section = _first_dict(section, "reprojection_error") or {}
+    target = _optional_float(
+        error_section,
+        "target_max_px",
+        "pcb_target_max_px",
+        "max_px",
+    )
+    if target is None:
+        target = PCB_REPROJECTION_TARGET_MAX_PX
+
+    values = {
+        "camera_rms_px": _optional_float(error_section, "camera_rms_px", "camera_px"),
+        "projector_rms_px": _optional_float(
+            error_section,
+            "projector_rms_px",
+            "projector_px",
+        ),
+        "stereo_rms_px": _optional_float(error_section, "stereo_rms_px", "stereo_px"),
+    }
+    measured = {key: value for key, value in values.items() if value is not None}
+    passed = None
+    if measured:
+        passed = all(value <= target for value in measured.values())
+        if not passed:
+            warnings.append("one or more reprojection RMS values exceed target_max_px")
+
+    return {
+        **values,
+        "target_max_px": target,
+        "passed": passed,
     }

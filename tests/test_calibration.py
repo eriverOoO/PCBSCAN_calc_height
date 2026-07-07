@@ -1,7 +1,11 @@
 import numpy as np
 import pytest
 
-from pcb_fpp_decoder.calibration import Calibration, triangulation_height
+from pcb_fpp_decoder.calibration import (
+    Calibration,
+    structured_light_calibration_report,
+    triangulation_height,
+)
 
 
 def test_triangulation_accepts_position_dependent_npz_maps():
@@ -35,3 +39,63 @@ def test_triangulation_rejects_unbroadcastable_maps():
 
     with pytest.raises(ValueError, match="cannot broadcast"):
         triangulation_height(delta_phi, calibration)
+
+
+def test_structured_light_calibration_report_accepts_nominal_moreno_taubin_setup():
+    calibration = Calibration(
+        data={
+            "structured_light_calibration": {
+                "method": "moreno_taubin_local_homography",
+                "capture": {
+                    "pose_count": 12,
+                    "full_white_required": True,
+                    "gray_code_axes": ["x", "y"],
+                    "board_locked_during_sequence": True,
+                },
+                "local_homography": {
+                    "patch_size_px": 47,
+                    "min_decoded_points": 1200,
+                },
+                "reprojection_error": {
+                    "camera_rms_px": 0.12,
+                    "projector_rms_px": 0.18,
+                    "stereo_rms_px": 0.22,
+                    "target_max_px": 0.35,
+                },
+            }
+        }
+    )
+
+    report = structured_light_calibration_report(calibration)
+
+    assert report["available"] is True
+    assert report["capture"]["pose_count_ok"] is True
+    assert report["local_homography"]["patch_size_ok"] is True
+    assert report["reprojection_error"]["passed"] is True
+    assert report["warnings"] == []
+
+
+def test_structured_light_calibration_report_warns_on_risky_setup():
+    calibration = Calibration(
+        data={
+            "structured_light_calibration": {
+                "capture": {
+                    "pose_count": 3,
+                    "full_white_required": False,
+                    "board_locked_during_sequence": False,
+                },
+                "local_homography": {"patch_size_px": 31},
+                "reprojection_error": {
+                    "projector_rms_px": 0.51,
+                    "target_max_px": 0.35,
+                },
+            }
+        }
+    )
+
+    report = structured_light_calibration_report(calibration)
+
+    assert report["capture"]["pose_count_ok"] is False
+    assert report["local_homography"]["patch_size_ok"] is False
+    assert report["reprojection_error"]["passed"] is False
+    assert len(report["warnings"]) == 5

@@ -12,6 +12,7 @@ from .calibration import (
     Calibration,
     inverse_linear_height,
     load_calibration,
+    structured_light_calibration_report,
     triangulation_height,
 )
 from .graycode import decode_gray_bits
@@ -918,6 +919,7 @@ class PcbFppDecoder:
             "calibration": {
                 "used": bool(calibration and calibration.is_loaded),
                 "path": str(calibration.path) if calibration and calibration.path else None,
+                "structured_light": structured_light_calibration_report(calibration),
             },
             "optical_setup": _optical_setup_report(self.config, calibration, height),
         }
@@ -1110,6 +1112,7 @@ def _optical_setup_report(
             "position_dependent_triangulation_supported": True,
             "loaded_npz_arrays": loaded_arrays,
         },
+        "structured_light_calibration": structured_light_calibration_report(calibration),
     }
 
 

@@ -193,6 +193,48 @@ np.savez(
 
 배열은 위상 이미지 shape로 브로드캐스트 가능해야 합니다. 예를 들어 `p`는 `(H, W)`이고 `d`, `l`은 스칼라여도 사용할 수 있습니다.
 
+## Moreno-Taubin식 실장비 캘리브레이션 메타데이터
+
+실제 카메라-프로젝터 리그에서 Moreno-Taubin local homography 방식으로 프로젝터 보정을 수행했다면 JSON 보정 파일에 `structured_light_calibration` 섹션을 함께 저장할 수 있습니다. 디코더는 이 값을 높이 계산식에 직접 대입하지는 않지만, `decode_report.json`의 `calibration.structured_light`와 `optical_setup.structured_light_calibration`에 캘리브레이션 품질을 기록합니다.
+
+권장 절차는 다음 순서입니다.
+
+```text
+1. checkerboard 포즈별 white 이미지와 Gray code 시퀀스 촬영
+2. white 이미지에서 카메라 체커보드 코너 검출 및 camera intrinsics 계산
+3. Gray code 디코딩으로 camera pixel -> projector row/column 매핑 생성
+4. 각 체커보드 코너 주변 47x47 px 패치에서 local homography 추정
+5. 코너를 projector image domain의 sub-pixel 좌표로 변환
+6. 변환된 projector 코너로 projector intrinsics/distortion 계산
+7. camera/projector intrinsics를 고정하고 stereo extrinsics R/T 계산
+```
+
+예제 설정은 [examples/calibration_config.example.json](examples/calibration_config.example.json)에 들어 있습니다. 핵심 필드는 다음과 같습니다.
+
+```json
+"structured_light_calibration": {
+  "method": "moreno_taubin_local_homography",
+  "capture": {
+    "pose_count": 12,
+    "full_white_required": true,
+    "gray_code_axes": ["x", "y"],
+    "board_locked_during_sequence": true
+  },
+  "local_homography": {
+    "patch_size_px": 47,
+    "min_decoded_points": 1200
+  },
+  "reprojection_error": {
+    "camera_rms_px": 0.12,
+    "projector_rms_px": 0.18,
+    "stereo_rms_px": 0.22,
+    "target_max_px": 0.35
+  }
+}
+```
+
+PCB 납땜 반사 환경에서는 `target_max_px`를 보수적으로 0.35 px 전후로 두고, camera/projector/stereo RMS 중 하나라도 초과하면 다시 촬영하는 쪽이 안전합니다. white 이미지가 포화되지 않도록 노출을 낮추고, black 이미지가 노이즈 바닥에 묻히지 않게 조명을 조절하세요. 납땜부 glare가 Gray code를 깨뜨리면 카메라/프로젝터 편광필터를 교차 배치하고, 확산판은 Gray code 경계가 흐려지지 않는 범위에서만 사용하세요.
+
 ## 주요 옵션
 
 - `--gray-threshold-mode dynamic_raw`: Gray 이미지를 `(White + Black) / 2` 동적 threshold와 비교합니다.

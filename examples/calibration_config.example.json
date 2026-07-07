@@ -15,6 +15,34 @@
     "l": 120.0,
     "p": 5.0
   },
+  "structured_light_calibration": {
+    "method": "moreno_taubin_local_homography",
+    "checkerboard": {
+      "inner_corners": [9, 6],
+      "square_size_mm": 5.0
+    },
+    "capture": {
+      "pose_count": 12,
+      "full_white_required": true,
+      "gray_code_axes": ["x", "y"],
+      "board_locked_during_sequence": true
+    },
+    "local_homography": {
+      "patch_size_px": 47,
+      "min_decoded_points": 1200
+    },
+    "reprojection_error": {
+      "camera_rms_px": 0.12,
+      "projector_rms_px": 0.18,
+      "stereo_rms_px": 0.22,
+      "target_max_px": 0.35
+    },
+    "pcb_reflection_tuning": {
+      "polarizer": "cross-polarized camera/projector filters when solder glare dominates",
+      "exposure": "keep white image below saturation and black image above noise floor",
+      "diffusion": "use mild projection diffusion only if it does not blur Gray code edges"
+    }
+  },
   "inverse_linear": {
     "u": 0.0,
     "v": 1.0,
@@ -24,6 +52,7 @@
     "Triangulation uses h = sign * (delta_phi * p * d) / (delta_phi * p + 2*pi*l).",
     "delta_phi must be phi_object - phi_reference from the same projector/camera geometry.",
     "If the 30-degree projector tilt causes position-dependent stripe pitch, store d/l/p as arrays in an NPZ calibration file with keys d, l, and p.",
+    "Moreno-Taubin projector calibration metadata is optional but is reported in decode_report.json when present.",
     "The exact sign and denominator convention are system-dependent; use --height-sign to flip if needed."
   ]
 }
