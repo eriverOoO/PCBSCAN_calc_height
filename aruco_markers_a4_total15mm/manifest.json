@@ -1,0 +1,33 @@
+{
+  "markers": [
+    {
+      "marker_id": 0,
+      "dictionary": "DICT_4X4_50",
+      "marker_size_mm": 11.4,
+      "quiet_zone_mm": 1.8,
+      "dpi": 300,
+      "marker_pixels": 135,
+      "quiet_zone_pixels": 21,
+      "png": "aruco_markers_a4_total15mm\\aruco_total15mm_dict_4x4_50_id000_11.4mm.png",
+      "pdf": "aruco_markers_a4_total15mm\\aruco_total15mm_dict_4x4_50_id000_11.4mm.pdf"
+    },
+    {
+      "marker_id": 1,
+      "dictionary": "DICT_4X4_50",
+      "marker_size_mm": 11.4,
+      "quiet_zone_mm": 1.8,
+      "dpi": 300,
+      "marker_pixels": 135,
+      "quiet_zone_pixels": 21,
+      "png": "aruco_markers_a4_total15mm\\aruco_total15mm_dict_4x4_50_id001_11.4mm.png",
+      "pdf": "aruco_markers_a4_total15mm\\aruco_total15mm_dict_4x4_50_id001_11.4mm.pdf"
+    }
+  ],
+  "sheet": {
+    "paper": "a4",
+    "width_mm": 210.0,
+    "height_mm": 297.0,
+    "png": "aruco_markers_a4_total15mm\\aruco_total15mm_sheet_dict_4x4_50_11.4mm_a4.png",
+    "pdf": "aruco_markers_a4_total15mm\\aruco_total15mm_sheet_dict_4x4_50_11.4mm_a4.pdf"
+  }
+}
