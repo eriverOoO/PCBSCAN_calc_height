@@ -3,4 +3,4 @@ pillow>=9.0
 matplotlib>=3.6
 pytest>=7.0
 scipy>=1.9
-opencv-python>=4.7
+opencv-contrib-python>=4.7
