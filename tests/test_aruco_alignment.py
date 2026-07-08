@@ -6,6 +6,7 @@ from PIL import Image
 
 from pcb_fpp_decoder.aruco_alignment import estimate_aruco_transform
 from pcb_fpp_decoder.aruco_marker import generate_marker_image
+from pcb_fpp_decoder.fusion_registration import estimate_and_save_fusion_transform
 
 
 def test_estimate_aruco_transform_from_white_pattern(tmp_path):
@@ -54,3 +55,55 @@ def test_estimate_aruco_transform_from_white_pattern(tmp_path):
     assert result.marker_ids == [0, 1]
     assert result.reprojection_rmse_px < 0.5
     assert result.deviation_from_180_deg == pytest.approx(1.3, abs=0.3)
+
+
+def test_auto_fusion_registration_saves_aruco_transform(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    if not hasattr(cv2, "aruco"):
+        pytest.skip("OpenCV ArUco module is not available")
+
+    target = Image.new("L", (600, 600), 255)
+    for marker_id, xy in ((0, (110, 110)), (1, (390, 390))):
+        marker, _marker_pixels, _quiet_pixels = generate_marker_image(
+            marker_id,
+            "DICT_4X4_50",
+            marker_size_mm=8.0,
+            quiet_zone_mm=2.0,
+            dpi=254,
+            label=False,
+        )
+        target.paste(marker, xy)
+
+    target_array = np.asarray(target)
+    target_to_source = cv2.getRotationMatrix2D((300.0, 300.0), 179.2, 1.0)
+    source_array = cv2.warpAffine(
+        target_array,
+        target_to_source,
+        (600, 600),
+        flags=cv2.INTER_NEAREST,
+        borderValue=255,
+    )
+
+    input_dir = tmp_path / "deg_0"
+    input_180_dir = tmp_path / "deg_180"
+    output_dir = tmp_path / "processed"
+    input_dir.mkdir()
+    input_180_dir.mkdir()
+    Image.fromarray(target_array).save(input_dir / "pattern_000.png")
+    Image.fromarray(source_array).save(input_180_dir / "pattern_000.png")
+
+    result = estimate_and_save_fusion_transform(
+        "aruco",
+        input_dir,
+        input_180_dir,
+        output_dir,
+        aruco_dictionary="DICT_4X4_50",
+        aruco_ids=(0, 1),
+        aruco_method="homography",
+    )
+
+    assert result is not None
+    assert result.registration == "aruco"
+    assert result.path == output_dir / "fusion" / "aruco_fusion_transform.json"
+    assert result.path.exists()
+    assert "ArUco homography transform estimated" in result.summary

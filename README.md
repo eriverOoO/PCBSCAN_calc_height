@@ -136,6 +136,20 @@ python scripts/decode_scan.py \
   --fusion-mode modulation-weighted
 ```
 
+한 번의 디코딩 명령에서 ArUco 정합과 0/180 통합을 같이 수행할 수도 있습니다. 이 경우 transform은 출력 폴더의 `fusion/aruco_fusion_transform.json`에 저장되고, 그 보정 행렬이 곧바로 최종 height fusion에 사용됩니다.
+
+```powershell
+.venv\Scripts\python.exe scripts\decode_scan.py `
+  --input captures\scan_xxx\deg_0 `
+  --input-180 captures\scan_xxx\deg_180 `
+  --output processed\scan_xxx\fused `
+  --fusion-registration aruco `
+  --aruco-ids 0,1 `
+  --aruco-image pattern_000.png `
+  --aruco-method homography `
+  --fusion-mode modulation-weighted
+```
+
 ### Phase correlation 기반 평행 오차 보정
 
 ArUco 마커 없이 로테이션 스테이지의 중심은 대략 맞지만, 180도 회전 후 이미지가 x/y 방향으로 몇 픽셀 밀리는 정도라면 phase correlation으로 잔여 평행 이동을 추정할 수 있습니다. 이 방법은 먼저 이론적 180도 회전 행렬을 적용한 뒤 남는 translation만 보정하므로, 실제 회전각 자체가 180도에서 크게 벗어나거나 원근 변형이 있으면 ArUco 기반 affine/homography 보정을 사용하세요.

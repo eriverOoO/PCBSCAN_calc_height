@@ -3,7 +3,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from .aruco_alignment import ARUCO_DICTIONARIES, parse_marker_ids
 from .decoder import DecodeConfig, PcbFppDecoder
+from .fusion_registration import (
+    FUSION_REGISTRATION_CHOICES,
+    estimate_and_save_fusion_transform,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -96,6 +101,49 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="JSON/NPY/NPZ 2x3 affine or 3x3 homography mapping 180-degree pixels to 0-degree pixels",
     )
+    parser.add_argument(
+        "--fusion-registration",
+        choices=FUSION_REGISTRATION_CHOICES,
+        default="rotation-180",
+        help=(
+            "Estimate a fusion transform automatically before decoding. "
+            "rotation-180 uses the nominal center rotation; aruco detects markers; "
+            "phase-correlation refines residual x/y translation."
+        ),
+    )
+    parser.add_argument(
+        "--aruco-dictionary",
+        default="DICT_4X4_50",
+        choices=sorted(ARUCO_DICTIONARIES),
+        help="ArUco dictionary for --fusion-registration aruco",
+    )
+    parser.add_argument(
+        "--aruco-ids",
+        default="0,1",
+        help="Comma-separated ArUco marker IDs for --fusion-registration aruco",
+    )
+    parser.add_argument(
+        "--aruco-image",
+        default="pattern_000.png",
+        help="Image file used for ArUco marker detection",
+    )
+    parser.add_argument(
+        "--aruco-method",
+        choices=("homography", "affine"),
+        default="homography",
+        help="Transform model for ArUco marker registration",
+    )
+    parser.add_argument(
+        "--phase-correlation-image",
+        default="pattern_000.png",
+        help="Image file used for phase-correlation registration",
+    )
+    parser.add_argument(
+        "--phase-correlation-min-response",
+        type=float,
+        default=0.0,
+        help="Fail phase-correlation registration below this response",
+    )
     parser.add_argument("--save-debug", action="store_true")
     parser.add_argument("--max-point-cloud-points", type=int, default=300_000)
     return parser
@@ -135,19 +183,30 @@ def config_from_args(args: argparse.Namespace) -> DecodeConfig:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    decoder = PcbFppDecoder(config_from_args(args))
+    config = config_from_args(args)
+    try:
+        estimated_transform = _prepare_fusion_registration(args, config)
+        decoder = PcbFppDecoder(config)
+        if args.input_180:
+            result = decoder.decode_fused(args.input, args.input_180, args.output)
+        else:
+            result = decoder.decode(args.input, args.output)
+    except (RuntimeError, ValueError, FileNotFoundError) as exc:
+        parser.error(str(exc))
+
     if args.input_180:
-        result = decoder.decode_fused(args.input, args.input_180, args.output)
         print(f"Decoded 0-degree scan: {args.input}")
         print(f"Decoded 180-degree scan: {args.input_180}")
         print(f"Output folder: {args.output}")
+        if estimated_transform is not None:
+            print(estimated_transform.summary)
+            print(f"Fusion transform: {estimated_transform.path}")
         print(
             "Fused valid ratio: "
             f"{result.report['fusion']['coverage']['fused_valid_ratio']:.3f}"
         )
         print(f"Height mode: {result.height.mode}; metric={result.height.metric}")
     else:
-        result = decoder.decode(args.input, args.output)
         print(f"Decoded scan: {args.input}")
         print(f"Output folder: {args.output}")
         print(
@@ -156,6 +215,39 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"Height mode: {result.height.mode}; metric={result.height.metric}")
     return 0
+
+
+def _prepare_fusion_registration(
+    args: argparse.Namespace,
+    config: DecodeConfig,
+):
+    if args.fusion_registration == "rotation-180":
+        return None
+    if not args.input_180:
+        raise ValueError("--fusion-registration requires --input-180")
+    if args.fusion_transform is not None:
+        raise ValueError(
+            "--fusion-transform cannot be combined with --fusion-registration; "
+            "choose either a precomputed transform or automatic registration"
+        )
+
+    marker_ids = parse_marker_ids(args.aruco_ids) if args.fusion_registration == "aruco" else ()
+    estimated_transform = estimate_and_save_fusion_transform(
+        args.fusion_registration,
+        args.input,
+        args.input_180,
+        args.output,
+        fusion_center=config.fusion_center,
+        aruco_dictionary=args.aruco_dictionary,
+        aruco_ids=marker_ids,
+        aruco_image=args.aruco_image,
+        aruco_method=args.aruco_method,
+        phase_correlation_image=args.phase_correlation_image,
+        phase_correlation_min_response=args.phase_correlation_min_response,
+    )
+    if estimated_transform is not None:
+        config.fusion_transform = estimated_transform.path
+    return estimated_transform
 
 
 if __name__ == "__main__":

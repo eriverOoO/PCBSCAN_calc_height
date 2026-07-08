@@ -4,6 +4,7 @@ import queue
 import threading
 import traceback
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from tkinter import (
     BOTH,
@@ -26,9 +27,22 @@ from tkinter import (
 )
 
 from .decoder import DecodeConfig, PcbFppDecoder
+from .fusion_registration import (
+    FUSION_REGISTRATION_CHOICES,
+    estimate_and_save_fusion_transform,
+)
 
 
 _DONE_TOKEN = "__PCB_FPP_DECODE_DONE__"
+
+
+@dataclass(frozen=True)
+class FusionRegistrationSettings:
+    mode: str
+    aruco_ids: tuple[int, ...]
+    aruco_dictionary: str
+    aruco_method: str
+    image_name: str
 
 
 class DecoderGui:
@@ -55,8 +69,13 @@ class DecoderGui:
         self.calibration_config_var = StringVar()
         self.height_sign_var = StringVar(value="1")
         self.fusion_mode_var = StringVar(value="modulation-weighted")
+        self.fusion_registration_var = StringVar(value="rotation-180")
         self.fusion_center_var = StringVar()
         self.fusion_transform_var = StringVar()
+        self.aruco_ids_var = StringVar(value="0,1")
+        self.aruco_dictionary_var = StringVar(value="DICT_4X4_50")
+        self.aruco_method_var = StringVar(value="homography")
+        self.registration_image_var = StringVar(value="pattern_000.png")
         self.max_points_var = StringVar(value="300000")
         self.detrend_var = IntVar(value=1)
         self.correction_var = IntVar(value=1)
@@ -112,6 +131,12 @@ class DecoderGui:
             self.fusion_mode_var,
             ("modulation-weighted", "average"),
         )
+        self._option_row(
+            height,
+            "Fusion registration",
+            self.fusion_registration_var,
+            FUSION_REGISTRATION_CHOICES,
+        )
         self._entry_row(height, "Fusion center x,y", self.fusion_center_var)
         self._file_row(
             height,
@@ -119,6 +144,20 @@ class DecoderGui:
             self.fusion_transform_var,
             self._choose_fusion_transform,
         )
+        self._entry_row(height, "ArUco IDs", self.aruco_ids_var)
+        self._option_row(
+            height,
+            "ArUco dictionary",
+            self.aruco_dictionary_var,
+            ("DICT_4X4_50", "DICT_4X4_100", "DICT_5X5_50", "DICT_6X6_50"),
+        )
+        self._option_row(
+            height,
+            "ArUco method",
+            self.aruco_method_var,
+            ("homography", "affine"),
+        )
+        self._entry_row(height, "Registration image", self.registration_image_var)
         self._entry_row(height, "Max 3D points", self.max_points_var)
 
         decode = LabelFrame(outer, text="Decode Settings", padx=8, pady=6)
@@ -268,6 +307,7 @@ class DecoderGui:
             input_180_dir = self._optional_path(self.input_180_var)
             output_dir = Path(output_text)
             config = self._config_from_fields()
+            registration = self._registration_from_fields()
         except Exception as exc:
             messagebox.showerror("Invalid settings", str(exc))
             return
@@ -275,7 +315,7 @@ class DecoderGui:
         self.run_button.config(state="disabled")
         thread = threading.Thread(
             target=self._decode_worker,
-            args=(input_dir, input_180_dir, output_dir, config),
+            args=(input_dir, input_180_dir, output_dir, config, registration),
             daemon=True,
         )
         thread.start()
@@ -321,6 +361,24 @@ class DecoderGui:
             max_point_cloud_points=int(self.max_points_var.get()),
         )
 
+    def _registration_from_fields(self) -> FusionRegistrationSettings:
+        mode = self.fusion_registration_var.get()
+        marker_ids = self._parse_aruco_ids(self.aruco_ids_var.get()) if mode == "aruco" else (0, 1)
+        image_name = self.registration_image_var.get().strip() or "pattern_000.png"
+        return FusionRegistrationSettings(
+            mode=mode,
+            aruco_ids=marker_ids,
+            aruco_dictionary=self.aruco_dictionary_var.get(),
+            aruco_method=self.aruco_method_var.get(),
+            image_name=image_name,
+        )
+
+    def _parse_aruco_ids(self, text: str) -> tuple[int, ...]:
+        marker_ids = tuple(int(part.strip()) for part in text.split(",") if part.strip())
+        if not marker_ids:
+            raise ValueError("At least one ArUco marker ID is required.")
+        return marker_ids
+
     def _parse_fusion_center(self) -> tuple[float, float] | None:
         text = self.fusion_center_var.get().strip()
         if not text:
@@ -341,6 +399,7 @@ class DecoderGui:
         input_180_dir: Path | None,
         output_dir: Path,
         config: DecodeConfig,
+        registration: FusionRegistrationSettings,
     ) -> None:
         self.messages.put(f"Decoding {input_dir}\n")
         if input_180_dir is not None:
@@ -354,6 +413,29 @@ class DecoderGui:
                 ratio = result.report["mask_coverage"]["combined_mask_ratio"]
                 ratio_label = "Combined valid ratio"
             else:
+                if registration.mode != "rotation-180":
+                    if config.fusion_transform is not None:
+                        raise ValueError(
+                            "Fusion transform file cannot be combined with automatic fusion registration."
+                        )
+                    estimated_transform = estimate_and_save_fusion_transform(
+                        registration.mode,
+                        input_dir,
+                        input_180_dir,
+                        output_dir,
+                        fusion_center=config.fusion_center,
+                        aruco_dictionary=registration.aruco_dictionary,
+                        aruco_ids=registration.aruco_ids,
+                        aruco_image=registration.image_name,
+                        aruco_method=registration.aruco_method,
+                        phase_correlation_image=registration.image_name,
+                    )
+                    if estimated_transform is not None:
+                        config.fusion_transform = estimated_transform.path
+                        self.messages.put(
+                            f"{estimated_transform.summary}\n"
+                            f"Fusion transform: {estimated_transform.path}\n"
+                        )
                 result = PcbFppDecoder(config).decode_fused(input_dir, input_180_dir, output_dir)
                 ratio = result.report["fusion"]["coverage"]["fused_valid_ratio"]
                 ratio_label = "Fused valid ratio"
