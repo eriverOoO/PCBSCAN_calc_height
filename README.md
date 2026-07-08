@@ -136,6 +136,29 @@ python scripts/decode_scan.py \
   --fusion-mode modulation-weighted
 ```
 
+### Phase correlation 기반 평행 오차 보정
+
+ArUco 마커 없이 로테이션 스테이지의 중심은 대략 맞지만, 180도 회전 후 이미지가 x/y 방향으로 몇 픽셀 밀리는 정도라면 phase correlation으로 잔여 평행 이동을 추정할 수 있습니다. 이 방법은 먼저 이론적 180도 회전 행렬을 적용한 뒤 남는 translation만 보정하므로, 실제 회전각 자체가 180도에서 크게 벗어나거나 원근 변형이 있으면 ArUco 기반 affine/homography 보정을 사용하세요.
+
+```powershell
+.venv\Scripts\python.exe scripts\estimate_phase_correlation_fusion_transform.py `
+  --input captures\scan_xxx\deg_0 `
+  --input-180 captures\scan_xxx\deg_180 `
+  --output processed\scan_xxx\phase_fusion_transform.json `
+  --image pattern_000.png
+```
+
+출력 JSON은 기존 `--fusion-transform` 입력과 같은 형식입니다.
+
+```powershell
+.venv\Scripts\python.exe scripts\decode_scan.py `
+  --input captures\scan_xxx\deg_0 `
+  --input-180 captures\scan_xxx\deg_180 `
+  --output processed\scan_xxx\fused `
+  --fusion-transform processed\scan_xxx\phase_fusion_transform.json `
+  --fusion-mode modulation-weighted
+```
+
 ## 그래픽 화면 실행
 
 ```bash
