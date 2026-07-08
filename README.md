@@ -90,6 +90,52 @@ python scripts/decode_scan.py \
 
 통합 실행 후 개별 scan 결과는 `views/deg_0`, `views/deg_180`에 저장되고, 최종 결과는 출력 루트의 `height/height_fused.npy`, `height/height_heatmap.png`, `point_cloud/point_cloud.ply`, `masks/source_*.png` 등에 저장됩니다.
 
+### ArUco 마커 기반 회전 보정
+
+로테이션 스테이지가 정확히 180.00도 회전하지 않는 경우에는 PCB에 붙인 ArUco 마커를 이용해 `deg_180` 영상을 `deg_0` 좌표계로 보정할 수 있습니다. 마커 이미지는 저장소에 포함하지 않고, 필요할 때 다음 명령으로 다시 생성합니다.
+
+30 mm x 30 mm PCB의 대각 코너에 붙일 때는 마커 전체 크기가 15 mm 이내인 버전을 권장합니다. 아래 명령은 ID 0, ID 1 두 개를 A4 PDF로 만들며, 검은 ArUco 본체는 약 11.4 mm, 흰 여백 포함 전체 크기는 약 15 mm입니다.
+
+```powershell
+.venv\Scripts\python.exe scripts\generate_aruco_marker.py `
+  --ids 0,1 `
+  --dictionary DICT_4X4_50 `
+  --marker-size-mm 11.4 `
+  --quiet-zone-mm 1.8 `
+  --dpi 300 `
+  --format both `
+  --no-label `
+  --sheet a4 `
+  --sheet-format both `
+  --prefix aruco_total15mm `
+  --sheet-prefix aruco_total15mm_sheet `
+  --output aruco_markers_a4_total15mm
+```
+
+인쇄할 때는 프린터 배율을 `실제 크기` 또는 `100%`로 두고, `용지에 맞춤` 옵션은 끄세요. 생성된 `aruco_markers*`와 `markers` 폴더는 `.gitignore`에 포함되어 있으므로 출력물은 Git에 추가하지 않습니다.
+
+촬영 후에는 White 프레임인 `pattern_000.png`에서 ID 0/1 마커를 검출해 fusion transform을 생성합니다.
+
+```powershell
+.venv\Scripts\python.exe scripts\estimate_aruco_fusion_transform.py `
+  --input captures\scan_xxx\deg_0 `
+  --input-180 captures\scan_xxx\deg_180 `
+  --output processed\scan_xxx\aruco_fusion_transform.json `
+  --ids 0,1 `
+  --image pattern_000.png
+```
+
+그 다음 디코딩/통합 단계에서 생성된 JSON을 `--fusion-transform`에 전달합니다.
+
+```powershell
+.venv\Scripts\python.exe scripts\decode_scan.py `
+  --input captures\scan_xxx\deg_0 `
+  --input-180 captures\scan_xxx\deg_180 `
+  --output processed\scan_xxx\fused `
+  --fusion-transform processed\scan_xxx\aruco_fusion_transform.json `
+  --fusion-mode modulation-weighted
+```
+
 ## 그래픽 화면 실행
 
 ```bash

@@ -10,3 +10,5 @@ build/
 dist/
 *.npy
 *.ply
+markers/
+aruco_markers*/
