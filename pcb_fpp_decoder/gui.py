@@ -31,6 +31,7 @@ from .fusion_registration import (
     FUSION_REGISTRATION_CHOICES,
     estimate_and_save_fusion_transform,
 )
+from .io import COLOR_INPUT_MODES, parse_crosstalk_matrix
 
 
 _DONE_TOKEN = "__PCB_FPP_DECODE_DONE__"
@@ -57,6 +58,8 @@ class DecoderGui:
         self.saturation_var = StringVar(value="250")
         self.dark_var = StringVar(value="5")
         self.modulation_var = StringVar(value="0.05")
+        self.input_color_mode_var = StringVar(value="smartphone_uv_blue")
+        self.crosstalk_matrix_var = StringVar()
         self.median_filter_var = StringVar(value="3")
         self.gray_decode_var = StringVar(value="auto")
         self.gray_threshold_var = StringVar(value="dynamic_raw")
@@ -162,6 +165,13 @@ class DecoderGui:
 
         decode = LabelFrame(outer, text="Decode Settings", padx=8, pady=6)
         decode.pack(fill="x", pady=(0, 8))
+        self._option_row(
+            decode,
+            "Input color",
+            self.input_color_mode_var,
+            COLOR_INPUT_MODES,
+        )
+        self._entry_row(decode, "Crosstalk matrix", self.crosstalk_matrix_var)
         self._entry_row(decode, "Min signal", self.min_signal_var)
         self._entry_row(decode, "Saturation threshold", self.saturation_var)
         self._entry_row(decode, "Dark threshold", self.dark_var)
@@ -338,6 +348,10 @@ class DecoderGui:
             )
 
         return DecodeConfig(
+            input_color_mode=self.input_color_mode_var.get(),
+            color_crosstalk_matrix=parse_crosstalk_matrix(
+                self.crosstalk_matrix_var.get()
+            ),
             min_signal=float(self.min_signal_var.get()),
             saturation_threshold=float(self.saturation_var.get()),
             dark_threshold=float(self.dark_var.get()),

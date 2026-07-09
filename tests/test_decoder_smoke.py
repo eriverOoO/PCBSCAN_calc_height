@@ -5,10 +5,19 @@ import pytest
 from PIL import Image
 
 from pcb_fpp_decoder.decoder import DecodeConfig, PcbFppDecoder
+from pcb_fpp_decoder.io import rgb_to_intensity
 
 
 def _save(path: Path, array: np.ndarray) -> None:
     Image.fromarray(np.clip(array, 0, 255).astype(np.uint8)).save(path)
+
+
+def _save_smartphone_uv_rgb(path: Path, blue_signal: np.ndarray) -> None:
+    blue = np.clip(blue_signal, 0, 255).astype(np.uint8)
+    red_leakage = np.clip(230.0 - 0.65 * blue_signal, 0, 255).astype(np.uint8)
+    green_fluorescence = np.clip(25.0 + 0.12 * blue_signal, 0, 255).astype(np.uint8)
+    rgb = np.stack([red_leakage, green_fluorescence, blue], axis=-1)
+    Image.fromarray(rgb.astype(np.uint8), mode="RGB").save(path)
 
 
 def _write_synthetic_scan(
@@ -51,6 +60,34 @@ def _write_synthetic_scan(
         _save(folder / f"pattern_{pattern_id:03d}.png", image)
 
 
+def _write_smartphone_uv_rgb_scan(folder: Path) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    width = 80
+    height = 48
+    _, x = np.indices((height, width))
+    k = (x // 5).astype(np.uint16)
+    phi = ((x % 5) / 5.0 * 2.0 * np.pi).astype(np.float32)
+    _save_smartphone_uv_rgb(folder / "pattern_000.png", np.full((height, width), 240.0))
+    _save_smartphone_uv_rgb(folder / "pattern_001.png", np.full((height, width), 10.0))
+
+    gray = k ^ (k >> 1)
+    for bit in range(8):
+        mask = ((gray >> (7 - bit)) & 1).astype(bool)
+        image = np.where(mask, 220.0, 25.0)
+        _save_smartphone_uv_rgb(folder / f"pattern_{2 + bit:03d}.png", image)
+
+    mean = 125.0
+    amp = 70.0
+    sine_images = {
+        10: mean + amp * np.sin(phi),
+        11: mean - amp * np.cos(phi),
+        12: mean - amp * np.sin(phi),
+        13: mean + amp * np.cos(phi),
+    }
+    for pattern_id, image in sine_images.items():
+        _save_smartphone_uv_rgb(folder / f"pattern_{pattern_id:03d}.png", image)
+
+
 def _copy_rotated_scan(source: Path, target: Path) -> None:
     target.mkdir(parents=True, exist_ok=True)
     for path in source.glob("*.png"):
@@ -88,6 +125,45 @@ def test_synthetic_scan_end_to_end(tmp_path):
     assert result.gray.stripe_order_k.shape == (48, 80)
     assert result.report["mask_coverage"]["combined_mask_ratio"] > 0.95
     assert int(result.gray.stripe_order_k.max()) == 15
+
+
+def test_smartphone_uv_rgb_scan_uses_blue_channel_by_default(tmp_path):
+    input_dir = tmp_path / "captures" / "scan_phone_uv" / "deg_0"
+    output_dir = tmp_path / "processed" / "scan_phone_uv" / "deg_0"
+    _write_smartphone_uv_rgb_scan(input_dir)
+
+    config = DecodeConfig(
+        min_signal=20,
+        saturation_threshold=250,
+        dark_threshold=5,
+        modulation_threshold=0.05,
+        median_filter=0,
+    )
+    result = PcbFppDecoder(config).decode(input_dir, output_dir)
+
+    assert result.report["thresholds"]["input_color_mode"] == "smartphone_uv_blue"
+    assert result.report["mask_coverage"]["combined_mask_ratio"] > 0.95
+    assert int(result.gray.stripe_order_k.max()) == 15
+
+
+def test_rgb_crosstalk_matrix_decouples_before_channel_extraction():
+    true_rgb = np.zeros((1, 3, 3), dtype=np.float32)
+    true_rgb[0, :, 2] = np.array([40.0, 120.0, 220.0], dtype=np.float32)
+    kappa = (
+        (1.0, 0.02, 0.30),
+        (0.01, 1.0, 0.08),
+        (0.04, 0.02, 1.0),
+    )
+    captured = true_rgb.reshape(-1, 3) @ np.asarray(kappa, dtype=np.float32).T
+    captured = captured.reshape(true_rgb.shape)
+
+    recovered_blue = rgb_to_intensity(
+        captured,
+        color_mode="blue",
+        crosstalk_matrix=kappa,
+    )
+
+    np.testing.assert_allclose(recovered_blue[0], true_rgb[0, :, 2], atol=1e-4)
 
 
 def test_reference_phase_subtraction_cancels_flat_projector_keystone(tmp_path):

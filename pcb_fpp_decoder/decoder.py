@@ -65,6 +65,8 @@ PATTERN_LABELS = {
 class DecodeConfig:
     projector_width: int = 1280
     gray_bits: int = 8
+    input_color_mode: str = "smartphone_uv_blue"
+    color_crosstalk_matrix: tuple[tuple[float, ...], ...] | None = None
     min_signal: float = 20.0
     saturation_threshold: float = 250.0
     dark_threshold: float = 5.0
@@ -184,6 +186,8 @@ class PcbFppDecoder:
             Path(input_dir),
             required_ids=range(14),
             optional_ids=optional_inverse_ids,
+            color_mode=self.config.input_color_mode,
+            crosstalk_matrix=self.config.color_crosstalk_matrix,
         )
 
     def compute_white_black_correction(self, patterns: PatternSet) -> CorrectionResult:
@@ -882,6 +886,9 @@ class PcbFppDecoder:
             "input_files": {f"{k:02d}": str(v) for k, v in patterns.files.items()},
             "config": _jsonable_config(self.config),
             "thresholds": {
+                "input_color_mode": self.config.input_color_mode,
+                "color_crosstalk_decoupling": self.config.color_crosstalk_matrix
+                is not None,
                 "min_signal": self.config.min_signal,
                 "saturation_threshold": self.config.saturation_threshold,
                 "dark_threshold": self.config.dark_threshold,
@@ -1111,6 +1118,18 @@ def _optical_setup_report(
         "calibration_maps": {
             "position_dependent_triangulation_supported": True,
             "loaded_npz_arrays": loaded_arrays,
+        },
+        "smartphone_uv_capture": {
+            "camera_family": "Android/Galaxy CMOS Bayer camera",
+            "input_color_mode": config.input_color_mode,
+            "single_channel_extraction": config.input_color_mode
+            in ("smartphone_uv_blue", "blue", "red", "green"),
+            "crosstalk_decoupling": config.color_crosstalk_matrix is not None,
+            "recommended_hardware": (
+                "Use fixed exposure/focus/white-balance. Add a 405 nm band-pass "
+                "filter for direct reflected UV/near-UV patterns, or a UV-cut/yellow "
+                "filter when decoding visible fluorescence from the solder mask."
+            ),
         },
         "structured_light_calibration": structured_light_calibration_report(calibration),
     }

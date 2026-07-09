@@ -9,6 +9,7 @@ from .fusion_registration import (
     FUSION_REGISTRATION_CHOICES,
     estimate_and_save_fusion_transform,
 )
+from .io import COLOR_INPUT_MODES, parse_crosstalk_matrix
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -24,6 +25,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", required=True, type=Path, help="Output processed folder")
     parser.add_argument("--projector-width", type=int, default=1280)
     parser.add_argument("--gray-bits", type=int, default=8)
+    parser.add_argument(
+        "--input-color-mode",
+        choices=COLOR_INPUT_MODES,
+        default="smartphone_uv_blue",
+        help=(
+            "How RGB camera frames are converted to one FPP intensity image. "
+            "Use smartphone_uv_blue/blue for Galaxy UV pattern captures to isolate "
+            "red-channel UV leakage and magenta cast."
+        ),
+    )
+    parser.add_argument(
+        "--color-crosstalk-matrix",
+        type=_parse_crosstalk_matrix_arg,
+        help=(
+            "Optional 3x3 kappa matrix for RGB crosstalk decoupling before channel "
+            "extraction. Format: 'r1c1,r1c2,r1c3;r2c1,...;r3c1,...'."
+        ),
+    )
     parser.add_argument("--min-signal", type=float, default=20.0)
     parser.add_argument("--saturation-threshold", type=float, default=250.0)
     parser.add_argument("--dark-threshold", type=float, default=5.0)
@@ -153,6 +172,8 @@ def config_from_args(args: argparse.Namespace) -> DecodeConfig:
     return DecodeConfig(
         projector_width=args.projector_width,
         gray_bits=args.gray_bits,
+        input_color_mode=args.input_color_mode,
+        color_crosstalk_matrix=args.color_crosstalk_matrix,
         min_signal=args.min_signal,
         saturation_threshold=args.saturation_threshold,
         dark_threshold=args.dark_threshold,
@@ -248,6 +269,13 @@ def _prepare_fusion_registration(
     if estimated_transform is not None:
         config.fusion_transform = estimated_transform.path
     return estimated_transform
+
+
+def _parse_crosstalk_matrix_arg(text: str):
+    try:
+        return parse_crosstalk_matrix(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 if __name__ == "__main__":
