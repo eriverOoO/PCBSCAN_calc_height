@@ -406,6 +406,11 @@ class DecoderGui:
         self.aruco_dictionary_var = StringVar(value="DICT_4X4_50")
         self.aruco_method_var = StringVar(value="homography")
         self.registration_image_var = StringVar(value="pattern_000.png")
+        self.analysis_roi_var = StringVar(value="none")
+        self.analysis_aruco_ids_var = StringVar(value="0,1,2,3")
+        self.analysis_workspace_size_var = StringVar()
+        self.pcb_size_var = StringVar()
+        self.pcb_margin_var = StringVar(value="0")
         self.max_points_var = StringVar(value="300000")
         self.detrend_var = IntVar(value=1)
         self.correction_var = IntVar(value=1)
@@ -475,6 +480,11 @@ class DecoderGui:
             self._choose_fusion_transform,
         )
         self._entry_row(height, "ArUco ID", self.aruco_ids_var)
+        self._option_row(height, "Analysis ROI", self.analysis_roi_var, ("none", "aruco"))
+        self._entry_row(height, "ROI ArUco IDs", self.analysis_aruco_ids_var)
+        self._entry_row(height, "Workspace W,H mm", self.analysis_workspace_size_var)
+        self._entry_row(height, "PCB W,H mm", self.pcb_size_var)
+        self._entry_row(height, "PCB margin mm", self.pcb_margin_var)
         self._option_row(
             height,
             "ArUco 사전",
@@ -672,6 +682,15 @@ class DecoderGui:
         calibration_config = self._optional_path(self.calibration_config_var)
         fusion_transform = self._optional_path(self.fusion_transform_var)
         fusion_center = self._parse_fusion_center()
+        workspace_size = self._parse_size_pair(
+            "Workspace W,H mm",
+            self.analysis_workspace_size_var.get(),
+        )
+        pcb_size = self._parse_size_pair("PCB W,H mm", self.pcb_size_var.get())
+        analysis_roi_mode = self.analysis_roi_var.get()
+        if analysis_roi_mode == "none" and (workspace_size is not None or pcb_size is not None):
+            analysis_roi_mode = "aruco"
+        pcb_margin_mm = _parse_float("PCB margin mm", self.pcb_margin_var.get() or "0")
 
         if height_mode != "relative" and reference_scan is None and reference_phase is None:
             raise ValueError(
@@ -705,6 +724,15 @@ class DecoderGui:
             fusion_mode=self.fusion_mode_var.get(),
             fusion_center=fusion_center,
             fusion_transform=fusion_transform,
+            analysis_roi_mode=analysis_roi_mode,
+            analysis_aruco_dictionary=self.aruco_dictionary_var.get(),
+            analysis_aruco_ids=self._parse_aruco_ids(self.analysis_aruco_ids_var.get()),
+            analysis_aruco_image=self.registration_image_var.get().strip() or "pattern_000.png",
+            analysis_workspace_width_mm=workspace_size[0] if workspace_size else None,
+            analysis_workspace_height_mm=workspace_size[1] if workspace_size else None,
+            pcb_width_mm=pcb_size[0] if pcb_size else None,
+            pcb_height_mm=pcb_size[1] if pcb_size else None,
+            pcb_margin_mm=pcb_margin_mm,
             max_point_cloud_points=_parse_int("최대 3D 점 수", self.max_points_var.get()),
         )
 
@@ -741,6 +769,23 @@ class DecoderGui:
             return float(parts[0]), float(parts[1])
         except ValueError as exc:
             raise ValueError("합성 중심은 x,y 형식의 숫자 두 개로 입력해 주세요.") from exc
+
+    def _parse_size_pair(self, label: str, text: str) -> tuple[float, float] | None:
+        text = text.strip()
+        if not text:
+            return None
+        normalized = text.replace(";", ",").replace(" ", ",").lower().replace("x", ",")
+        parts = [part for part in normalized.split(",") if part]
+        if len(parts) != 2:
+            raise ValueError(f"{label} must use W,H format")
+        try:
+            width = float(parts[0])
+            height = float(parts[1])
+        except ValueError as exc:
+            raise ValueError(f"{label} values must be numbers") from exc
+        if width <= 0 or height <= 0:
+            raise ValueError(f"{label} values must be positive")
+        return width, height
 
     def _optional_path(self, var: StringVar) -> Path | None:
         text = var.get().strip()

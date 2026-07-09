@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from pcb_fpp_decoder.aruco_marker import generate_marker_image
 from pcb_fpp_decoder.cli import main as cli_main
 from pcb_fpp_decoder.decoder import DecodeConfig, PcbFppDecoder
 from pcb_fpp_decoder.io import rgb_to_intensity
@@ -104,6 +105,28 @@ def _invalidate_columns(folder: Path, start_col: int) -> None:
         Image.fromarray(image.astype(np.uint8)).save(path)
 
 
+def _paste_corner_aruco_markers(folder: Path, image_name: str = "pattern_000.png") -> None:
+    image_path = folder / image_name
+    image = Image.open(image_path).convert("L")
+    marker_positions = {
+        0: (10, 10),
+        1: (140, 10),
+        2: (140, 100),
+        3: (10, 100),
+    }
+    for marker_id, xy in marker_positions.items():
+        marker, _marker_pixels, _quiet_pixels = generate_marker_image(
+            marker_id,
+            "DICT_4X4_50",
+            marker_size_mm=10.0,
+            quiet_zone_mm=2.0,
+            dpi=127,
+            label=False,
+        )
+        image.paste(marker, xy)
+    image.save(image_path)
+
+
 def test_synthetic_scan_end_to_end(tmp_path):
     input_dir = tmp_path / "captures" / "scan_001" / "deg_0"
     output_dir = tmp_path / "processed" / "scan_001" / "deg_0"
@@ -127,6 +150,70 @@ def test_synthetic_scan_end_to_end(tmp_path):
     assert result.gray.stripe_order_k.shape == (48, 80)
     assert result.report["mask_coverage"]["combined_mask_ratio"] > 0.95
     assert int(result.gray.stripe_order_k.max()) == 15
+
+
+def test_aruco_analysis_roi_limits_height_to_centered_pcb_size(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    if not hasattr(cv2, "aruco"):
+        pytest.skip("OpenCV ArUco module is not available")
+
+    input_dir = tmp_path / "captures" / "scan_roi" / "deg_0"
+    output_dir = tmp_path / "processed" / "scan_roi" / "deg_0"
+    _write_synthetic_scan(input_dir, width=220, height=180)
+    _paste_corner_aruco_markers(input_dir)
+
+    config = DecodeConfig(
+        min_signal=20,
+        saturation_threshold=250,
+        dark_threshold=5,
+        modulation_threshold=0.05,
+        median_filter=0,
+        analysis_roi_mode="aruco",
+        analysis_aruco_ids=(0, 1, 2, 3),
+        analysis_workspace_width_mm=100.0,
+        analysis_workspace_height_mm=50.0,
+        pcb_width_mm=50.0,
+        pcb_height_mm=25.0,
+        pcb_margin_mm=2.0,
+    )
+    result = PcbFppDecoder(config).decode(input_dir, output_dir)
+
+    assert result.analysis_roi is not None
+    assert (output_dir / "masks" / "analysis_roi_mask.png").exists()
+    assert (output_dir / "masks" / "marker_space_mask.png").exists()
+    assert (output_dir / "masks" / "pcb_analysis_mask.png").exists()
+    assert np.count_nonzero(result.analysis_roi.mask) < np.count_nonzero(
+        result.analysis_roi.marker_space_mask
+    )
+    assert np.array_equal(result.height.mask, result.absolute.combined_mask)
+    assert np.all(np.isnan(result.height.height[~result.analysis_roi.mask]))
+    roi_report = result.report["analysis_roi"]
+    assert roi_report["enabled"] is True
+    assert roi_report["pcb_size_mm"]["width"] == 50.0
+    assert roi_report["pcb_size_mm"]["margin"] == 2.0
+    assert roi_report["pcb_size_mm"]["effective_width"] == 54.0
+    assert roi_report["pcb_size_mm"]["assumed_centered"] is True
+    assert result.report["mask_coverage"]["combined_mask_ratio"] < 0.2
+
+    no_margin = PcbFppDecoder(
+        DecodeConfig(
+            min_signal=20,
+            saturation_threshold=250,
+            dark_threshold=5,
+            modulation_threshold=0.05,
+            median_filter=0,
+            analysis_roi_mode="aruco",
+            analysis_aruco_ids=(0, 1, 2, 3),
+            analysis_workspace_width_mm=100.0,
+            analysis_workspace_height_mm=50.0,
+            pcb_width_mm=50.0,
+            pcb_height_mm=25.0,
+            pcb_margin_mm=0.0,
+        )
+    ).decode(input_dir, tmp_path / "processed" / "scan_roi_no_margin" / "deg_0")
+    assert np.count_nonzero(result.analysis_roi.mask) > np.count_nonzero(
+        no_margin.analysis_roi.mask
+    )
 
 
 def test_cli_resolves_pro4500_phone_scan_root_angle_folder(tmp_path):

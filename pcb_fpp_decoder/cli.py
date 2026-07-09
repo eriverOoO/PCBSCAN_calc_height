@@ -180,6 +180,55 @@ def build_parser() -> argparse.ArgumentParser:
         help="Transform model for ArUco marker registration",
     )
     parser.add_argument(
+        "--analysis-roi",
+        choices=("none", "aruco"),
+        default="none",
+        help="Limit decoding to an analysis ROI. aruco uses the space between four markers.",
+    )
+    parser.add_argument(
+        "--analysis-aruco-dictionary",
+        default="DICT_4X4_50",
+        choices=sorted(ARUCO_DICTIONARIES),
+        help="ArUco dictionary for --analysis-roi aruco",
+    )
+    parser.add_argument(
+        "--analysis-aruco-ids",
+        type=_parse_marker_id_tuple_arg,
+        default=(0, 1, 2, 3),
+        help="Exactly four comma-separated ArUco marker IDs for analysis ROI",
+    )
+    parser.add_argument(
+        "--analysis-aruco-image",
+        default="pattern_000.png",
+        help="Image file used for analysis ROI marker detection",
+    )
+    parser.add_argument(
+        "--analysis-workspace-width-mm",
+        type=float,
+        help="Physical width between the four marker-space corners, in millimeters",
+    )
+    parser.add_argument(
+        "--analysis-workspace-height-mm",
+        type=float,
+        help="Physical height between the four marker-space corners, in millimeters",
+    )
+    parser.add_argument(
+        "--pcb-width-mm",
+        type=float,
+        help="PCB width in millimeters. Requires analysis workspace width/height.",
+    )
+    parser.add_argument(
+        "--pcb-height-mm",
+        type=float,
+        help="PCB height in millimeters. Requires analysis workspace width/height.",
+    )
+    parser.add_argument(
+        "--pcb-margin-mm",
+        type=float,
+        default=0.0,
+        help="Extra margin added around the centered PCB analysis area, in millimeters.",
+    )
+    parser.add_argument(
         "--phase-correlation-image",
         default="pattern_000.png",
         help="Image file used for phase-correlation registration",
@@ -196,6 +245,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def config_from_args(args: argparse.Namespace) -> DecodeConfig:
+    analysis_roi_mode = args.analysis_roi
+    analysis_options_given = any(
+        value is not None
+        for value in (
+            args.analysis_workspace_width_mm,
+            args.analysis_workspace_height_mm,
+            args.pcb_width_mm,
+            args.pcb_height_mm,
+            args.pcb_margin_mm if args.pcb_margin_mm else None,
+        )
+    )
+    if analysis_roi_mode == "none" and analysis_options_given:
+        analysis_roi_mode = "aruco"
+
     return DecodeConfig(
         projector_width=args.projector_width,
         gray_bits=args.gray_bits,
@@ -223,6 +286,15 @@ def config_from_args(args: argparse.Namespace) -> DecodeConfig:
         fusion_mode=args.fusion_mode,
         fusion_center=tuple(args.fusion_center) if args.fusion_center else None,
         fusion_transform=args.fusion_transform,
+        analysis_roi_mode=analysis_roi_mode,
+        analysis_aruco_dictionary=args.analysis_aruco_dictionary,
+        analysis_aruco_ids=tuple(args.analysis_aruco_ids),
+        analysis_aruco_image=args.analysis_aruco_image,
+        analysis_workspace_width_mm=args.analysis_workspace_width_mm,
+        analysis_workspace_height_mm=args.analysis_workspace_height_mm,
+        pcb_width_mm=args.pcb_width_mm,
+        pcb_height_mm=args.pcb_height_mm,
+        pcb_margin_mm=args.pcb_margin_mm,
         save_debug=args.save_debug,
         max_point_cloud_points=args.max_point_cloud_points,
     )
@@ -318,6 +390,13 @@ def _prepare_fusion_registration(
 def _parse_crosstalk_matrix_arg(text: str):
     try:
         return parse_crosstalk_matrix(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _parse_marker_id_tuple_arg(text: str) -> tuple[int, ...]:
+    try:
+        return tuple(parse_marker_ids(text))
     except ValueError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 

@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 
+from .analysis_roi import AnalysisRoiResult, estimate_aruco_analysis_roi
 from .calibration import (
     Calibration,
     inverse_linear_height,
@@ -89,6 +90,15 @@ class DecodeConfig:
     fusion_mode: str = "modulation-weighted"
     fusion_center: tuple[float, float] | None = None
     fusion_transform: Path | None = None
+    analysis_roi_mode: str = "none"
+    analysis_aruco_dictionary: str = "DICT_4X4_50"
+    analysis_aruco_ids: tuple[int, ...] = (0, 1, 2, 3)
+    analysis_aruco_image: str = "pattern_000.png"
+    analysis_workspace_width_mm: float | None = None
+    analysis_workspace_height_mm: float | None = None
+    pcb_width_mm: float | None = None
+    pcb_height_mm: float | None = None
+    pcb_margin_mm: float = 0.0
     save_debug: bool = False
     epsilon: float = 1e-6
     max_point_cloud_points: int = 300_000
@@ -159,6 +169,7 @@ class DecodeResult:
     height: HeightResult
     calibration: Calibration | None
     report: dict[str, Any]
+    analysis_roi: AnalysisRoiResult | None = None
 
 
 @dataclass
@@ -462,13 +473,31 @@ class PcbFppDecoder:
 
     def _decode_in_memory(self, input_dir: Path) -> DecodeResult:
         patterns = self.load_scan(input_dir)
+        analysis_roi = self.compute_analysis_roi(patterns)
         correction = self.compute_white_black_correction(patterns)
+        if analysis_roi is not None:
+            _apply_analysis_roi_to_correction(correction, analysis_roi.mask)
         gray = self.decode_gray_code(patterns, correction)
+        if analysis_roi is not None:
+            _apply_analysis_roi_to_gray(gray, analysis_roi.mask)
         phase = self.compute_wrapped_phase(patterns, correction)
+        if analysis_roi is not None:
+            _apply_analysis_roi_to_phase(phase, analysis_roi.mask)
         absolute = self.unwrap_absolute_phase(gray, phase)
+        if analysis_roi is not None:
+            _apply_analysis_roi_to_absolute(absolute, analysis_roi.mask)
         calibration = load_calibration(self.config.calibration_config)
         height = self.compute_height(absolute, calibration)
-        report = self._build_report(patterns, correction, gray, phase, absolute, height, calibration)
+        report = self._build_report(
+            patterns,
+            correction,
+            gray,
+            phase,
+            absolute,
+            height,
+            calibration,
+            analysis_roi,
+        )
         return DecodeResult(
             patterns=patterns,
             correction=correction,
@@ -478,6 +507,26 @@ class PcbFppDecoder:
             height=height,
             calibration=calibration,
             report=report,
+            analysis_roi=analysis_roi,
+        )
+
+    def compute_analysis_roi(self, patterns: PatternSet) -> AnalysisRoiResult | None:
+        mode = self.config.analysis_roi_mode
+        if mode == "none":
+            return None
+        if mode != "aruco":
+            raise ValueError("analysis_roi_mode must be none or aruco")
+        return estimate_aruco_analysis_roi(
+            patterns.input_dir,
+            patterns.shape,
+            dictionary_name=self.config.analysis_aruco_dictionary,
+            marker_ids=self.config.analysis_aruco_ids,
+            image_name=self.config.analysis_aruco_image,
+            workspace_width_mm=self.config.analysis_workspace_width_mm,
+            workspace_height_mm=self.config.analysis_workspace_height_mm,
+            pcb_width_mm=self.config.pcb_width_mm,
+            pcb_height_mm=self.config.pcb_height_mm,
+            pcb_margin_mm=self.config.pcb_margin_mm,
         )
 
     def fuse_decode_results(self, deg0: DecodeResult, deg180: DecodeResult) -> FusionResult:
@@ -598,6 +647,14 @@ class PcbFppDecoder:
         save_mask(masks_dir / "modulation_mask.png", result.phase.modulation_mask)
         save_mask(masks_dir / "saturation_mask.png", result.correction.saturation_mask)
         save_mask(masks_dir / "combined_mask.png", result.absolute.combined_mask)
+        if result.analysis_roi is not None:
+            save_mask(masks_dir / "analysis_roi_mask.png", result.analysis_roi.mask)
+            save_mask(masks_dir / "marker_space_mask.png", result.analysis_roi.marker_space_mask)
+            np.save(masks_dir / "analysis_roi_mask.npy", result.analysis_roi.mask)
+            np.save(masks_dir / "marker_space_mask.npy", result.analysis_roi.marker_space_mask)
+            if result.analysis_roi.pcb_mask is not None:
+                save_mask(masks_dir / "pcb_analysis_mask.png", result.analysis_roi.pcb_mask)
+                np.save(masks_dir / "pcb_analysis_mask.npy", result.analysis_roi.pcb_mask)
 
         np.save(phase_dir / "wrapped_phase.npy", result.phase.wrapped_phase)
         save_wrapped_phase_preview(
@@ -840,11 +897,13 @@ class PcbFppDecoder:
                     "input_dir": str(deg0.patterns.input_dir),
                     "combined_mask_ratio": deg0.report["mask_coverage"]["combined_mask_ratio"],
                     "height": deg0.report["height"],
+                    "analysis_roi": deg0.report.get("analysis_roi"),
                 },
                 "deg_180": {
                     "input_dir": str(deg180.patterns.input_dir),
                     "combined_mask_ratio": deg180.report["mask_coverage"]["combined_mask_ratio"],
                     "height": deg180.report["height"],
+                    "analysis_roi": deg180.report.get("analysis_roi"),
                 },
             },
             "height": {
@@ -856,6 +915,10 @@ class PcbFppDecoder:
                 "reference_used": height.reference_used,
             },
             "optical_setup": deg0.report.get("optical_setup"),
+            "analysis_roi": {
+                "deg_0": deg0.report.get("analysis_roi"),
+                "deg_180": deg180.report.get("analysis_roi"),
+            },
         }
 
     def _build_report(
@@ -867,6 +930,7 @@ class PcbFppDecoder:
         absolute: AbsolutePhaseResult,
         height: HeightResult,
         calibration: Calibration | None,
+        analysis_roi: AnalysisRoiResult | None = None,
     ) -> dict[str, Any]:
         shape = patterns.shape
         total = int(np.prod(shape))
@@ -930,6 +994,11 @@ class PcbFppDecoder:
             },
             "phone_capture": patterns.capture_summary,
             "optical_setup": _optical_setup_report(self.config, calibration, height),
+            "analysis_roi": (
+                analysis_roi.report
+                if analysis_roi is not None
+                else {"enabled": False, "mode": "none"}
+            ),
         }
         return report
 
@@ -1134,6 +1203,44 @@ def _optical_setup_report(
         },
         "structured_light_calibration": structured_light_calibration_report(calibration),
     }
+
+
+def _apply_analysis_roi_to_correction(
+    correction: CorrectionResult,
+    mask: np.ndarray,
+) -> None:
+    correction.valid_signal_mask = correction.valid_signal_mask & mask
+    correction.valid_mask = correction.valid_mask & mask
+
+
+def _apply_analysis_roi_to_gray(gray: GrayDecodeResult, mask: np.ndarray) -> None:
+    gray.valid_mask = gray.valid_mask & mask
+    gray.confidence = np.where(mask, gray.confidence, 0.0).astype(np.float32)
+
+
+def _apply_analysis_roi_to_phase(phase: PhaseResult, mask: np.ndarray) -> None:
+    phase.valid_mask = phase.valid_mask & mask
+    phase.modulation_mask = phase.modulation_mask & mask
+    phase.modulation = np.where(mask, phase.modulation, 0.0).astype(np.float32)
+    phase.modulation_norm = np.where(mask, phase.modulation_norm, 0.0).astype(np.float32)
+
+
+def _apply_analysis_roi_to_absolute(
+    absolute: AbsolutePhaseResult,
+    mask: np.ndarray,
+) -> None:
+    absolute.combined_mask = absolute.combined_mask & mask
+    absolute.correction_mask = absolute.correction_mask & mask
+    absolute.absolute_phase = np.where(
+        absolute.combined_mask,
+        absolute.absolute_phase,
+        np.nan,
+    ).astype(np.float32)
+    absolute.absolute_phase_raw = np.where(
+        absolute.combined_mask,
+        absolute.absolute_phase_raw,
+        np.nan,
+    ).astype(np.float32)
 
 
 def _height_confidence(result: DecodeResult) -> np.ndarray:
