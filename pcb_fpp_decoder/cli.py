@@ -9,7 +9,12 @@ from .fusion_registration import (
     FUSION_REGISTRATION_CHOICES,
     estimate_and_save_fusion_transform,
 )
-from .io import COLOR_INPUT_MODES, parse_crosstalk_matrix
+from .io import (
+    COLOR_INPUT_MODES,
+    has_decode_pattern_files,
+    parse_crosstalk_matrix,
+    resolve_decode_input_dir,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -21,6 +26,28 @@ def build_parser() -> argparse.ArgumentParser:
         "--input-180",
         type=Path,
         help="Optional 180-degree scan folder to fuse with --input",
+    )
+    parser.add_argument(
+        "--input-angle",
+        type=int,
+        help=(
+            "When --input is a PRO4500 phone scan root, decode this angle_NNN folder. "
+            "If omitted, decoder-ready input is used directly or angle_000 is preferred."
+        ),
+    )
+    parser.add_argument(
+        "--input-180-angle",
+        type=int,
+        default=180,
+        help="When --input-180 or --input is a PRO4500 scan root, use this 180-view angle.",
+    )
+    parser.add_argument(
+        "--auto-phone-fusion",
+        action="store_true",
+        help=(
+            "If --input is a PRO4500 phone scan root containing angle_000 and "
+            "angle_180 decode folders, fuse them without passing --input-180."
+        ),
     )
     parser.add_argument("--output", required=True, type=Path, help="Output processed folder")
     parser.add_argument("--projector-width", type=int, default=1280)
@@ -204,6 +231,23 @@ def config_from_args(args: argparse.Namespace) -> DecodeConfig:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    args.input = resolve_decode_input_dir(args.input, preferred_angle=args.input_angle)
+    if args.input_180 is not None:
+        args.input_180 = resolve_decode_input_dir(
+            args.input_180,
+            preferred_angle=args.input_180_angle,
+        )
+    elif args.auto_phone_fusion:
+        candidate = resolve_decode_input_dir(args.input.parent, preferred_angle=args.input_180_angle)
+        if candidate == args.input or not has_decode_pattern_files(candidate):
+            candidate = resolve_decode_input_dir(args.input, preferred_angle=args.input_180_angle)
+        if candidate == args.input or not has_decode_pattern_files(candidate):
+            raise SystemExit(
+                "--auto-phone-fusion could not find a decoder-ready "
+                f"angle_{args.input_180_angle:03d} folder"
+            )
+        args.input_180 = candidate
+
     config = config_from_args(args)
     try:
         estimated_transform = _prepare_fusion_registration(args, config)

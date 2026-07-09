@@ -16,7 +16,7 @@ from .calibration import (
     triangulation_height,
 )
 from .graycode import decode_gray_bits
-from .io import PatternSet, load_pattern_set, save_float01_png
+from .io import PatternSet, load_pattern_set, resolve_decode_input_dir, save_float01_png
 from .phase import (
     TWO_PI,
     compute_modulation,
@@ -928,6 +928,7 @@ class PcbFppDecoder:
                 "path": str(calibration.path) if calibration and calibration.path else None,
                 "structured_light": structured_light_calibration_report(calibration),
             },
+            "phone_capture": patterns.capture_summary,
             "optical_setup": _optical_setup_report(self.config, calibration, height),
         }
         return report
@@ -940,7 +941,7 @@ class PcbFppDecoder:
             return np.load(path).astype(np.float32)
 
         if self.config.reference_scan is not None:
-            ref_path = Path(self.config.reference_scan).expanduser().resolve()
+            ref_path = resolve_decode_input_dir(Path(self.config.reference_scan), preferred_angle=0)
             processed_phase = ref_path / "phase" / "absolute_phase.npy"
             if processed_phase.exists():
                 return np.load(processed_phase).astype(np.float32)

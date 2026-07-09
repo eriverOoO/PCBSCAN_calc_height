@@ -69,6 +69,50 @@ python scripts/decode_scan.py \
 
 Windows PowerShell에서는 위 예시의 `\` 대신 한 줄로 실행하거나 줄바꿈 문자로 backtick(`)을 사용하세요.
 
+## Android 폰 촬영 입력
+
+`PRO4500_Control_System`의 Android 촬영 워크플로는 보통 다음 구조를 만듭니다.
+
+```text
+captures/scan_YYYYMMDD_HHMMSS/
+  angle_000/
+    pattern_000.png
+    ...
+    pattern_021.png
+    exposures/
+    hdr_masks/
+    scan_log.json
+    hdr_merge_report.json
+  angle_180/
+    pattern_000.png
+    ...
+```
+
+이제 `--input`에 스캔 루트를 넘겨도 decoder-ready `angle_000` 폴더를 자동으로 찾아 사용합니다.
+
+```powershell
+.venv\Scripts\python.exe scripts\decode_scan.py `
+  --input "C:\Users\shang\OneDrive\바탕 화면\PRO4500_Control_System\captures\scan_YYYYMMDD_HHMMSS" `
+  --output processed\scan_YYYYMMDD_HHMMSS\angle_000 `
+  --input-color-mode smartphone_uv_blue `
+  --gray-decode-mode auto `
+  --median-filter 3
+```
+
+다른 각도를 직접 지정하려면 `--input-angle 180`처럼 지정합니다. 같은 스캔 루트에 `angle_000`과 `angle_180`이 모두 있고 바로 통합하려면 `--auto-phone-fusion`을 사용할 수 있습니다.
+
+```powershell
+.venv\Scripts\python.exe scripts\decode_scan.py `
+  --input "C:\Users\shang\OneDrive\바탕 화면\PRO4500_Control_System\captures\scan_YYYYMMDD_HHMMSS" `
+  --output processed\scan_YYYYMMDD_HHMMSS\fused `
+  --auto-phone-fusion `
+  --height-mode triangulation `
+  --reference-scan "C:\Users\shang\OneDrive\바탕 화면\PRO4500_Control_System\captures\reference_scan" `
+  --calibration-config examples\calibration_config.example.json
+```
+
+`scan_log.json`이 있으면 `decode_report.json`의 `phone_capture` 항목에 수동 노출/ISO, 수동 초점, AWB lock, HDR bracket, scan type, rig/calibration id, JPEG 사용 여부, 반전 Gray 누락 여부가 기록됩니다. 폰 촬영에서 경고가 없어야 한다는 뜻은 아니지만, height map을 해석하기 전에는 이 항목과 `masks/combined_mask.png`, `height/delta_phase_preview.png`를 함께 확인하세요.
+
 ## 0도/180도 데이터 통합
 
 PCB를 정방향으로 한 번, 180도 회전해서 한 번 촬영한 경우 `--input-180`을 추가하면 두 높이 지도를 정렬하고 통합합니다.

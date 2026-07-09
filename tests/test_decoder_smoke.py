@@ -1,9 +1,11 @@
+import json
 from pathlib import Path
 
 import numpy as np
 import pytest
 from PIL import Image
 
+from pcb_fpp_decoder.cli import main as cli_main
 from pcb_fpp_decoder.decoder import DecodeConfig, PcbFppDecoder
 from pcb_fpp_decoder.io import rgb_to_intensity
 
@@ -125,6 +127,87 @@ def test_synthetic_scan_end_to_end(tmp_path):
     assert result.gray.stripe_order_k.shape == (48, 80)
     assert result.report["mask_coverage"]["combined_mask_ratio"] > 0.95
     assert int(result.gray.stripe_order_k.max()) == 15
+
+
+def test_cli_resolves_pro4500_phone_scan_root_angle_folder(tmp_path):
+    scan_root = tmp_path / "captures" / "scan_phone"
+    angle_0 = scan_root / "angle_000"
+    output_dir = tmp_path / "processed" / "scan_phone"
+    _write_synthetic_scan(angle_0)
+
+    exit_code = cli_main(
+        [
+            "--input",
+            str(scan_root),
+            "--output",
+            str(output_dir),
+            "--median-filter",
+            "0",
+        ]
+    )
+
+    assert exit_code == 0
+    assert (output_dir / "decode_report.json").exists()
+    report = json.loads((output_dir / "decode_report.json").read_text(encoding="utf-8"))
+    assert report["input_dir"].endswith("angle_000")
+
+
+def test_phone_capture_metadata_is_reported(tmp_path):
+    input_dir = tmp_path / "captures" / "scan_phone" / "angle_000"
+    output_dir = tmp_path / "processed" / "scan_phone" / "angle_000"
+    _write_synthetic_scan(input_dir, inverted_gray=True)
+    log = {
+        "scan_id": "scan_phone",
+        "status": "ok",
+        "decode_dir": str(input_dir),
+        "scan_type": "object",
+        "angles_deg": [0],
+        "metadata": {
+            "scan_type": "object",
+            "projector_tilt_deg": 30.0,
+            "manual_focus_confirmed": True,
+            "phone_mount_id": "test_mount",
+            "rig_id": "test_rig",
+            "calibration_id": "test_cal",
+            "keystone_predistortion": False,
+        },
+        "hdr": {
+            "enabled": True,
+            "bit_depth": 8,
+            "saturated_threshold": 250,
+            "dark_threshold": 5,
+            "brackets": [{"label": "mid", "exposure_us": 10000, "iso": 100}],
+        },
+        "settings": {
+            "manual": True,
+            "manual_focus": True,
+            "awb_locked": True,
+            "focus_diopters": 0.0,
+        },
+        "patterns": [
+            {
+                "pattern_id": pattern_id,
+                "label": f"Pattern{pattern_id}",
+                "filename": f"pattern_{pattern_id:03d}.png",
+            }
+            for pattern_id in range(22)
+        ],
+        "rows": [],
+    }
+    (input_dir / "scan_log.json").write_text(
+        json.dumps(log, indent=2),
+        encoding="utf-8",
+    )
+
+    result = PcbFppDecoder(DecodeConfig(median_filter=0)).decode(input_dir, output_dir)
+
+    phone = result.report["phone_capture"]
+    assert phone["available"] is True
+    assert phone["scan_id"] == "scan_phone"
+    assert phone["hdr"]["enabled"] is True
+    assert phone["manual"] is True
+    assert phone["inverted_gray_count"] == 8
+    assert phone["warnings"] == []
 
 
 def test_smartphone_uv_rgb_scan_uses_blue_channel_by_default(tmp_path):

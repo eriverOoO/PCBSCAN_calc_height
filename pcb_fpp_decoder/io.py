@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 import numpy as np
 from PIL import Image
@@ -28,6 +28,8 @@ class PatternSet:
     images: dict[int, np.ndarray]
     files: dict[int, Path]
     shape: tuple[int, int]
+    scan_log: dict[str, Any] | None = None
+    capture_summary: dict[str, Any] = field(default_factory=dict)
 
     @property
     def height(self) -> int:
@@ -204,6 +206,15 @@ def find_image_files(input_dir: Path) -> list[Path]:
     )
 
 
+def load_scan_log(input_dir: Path) -> dict[str, Any] | None:
+    log_path = input_dir / "scan_log.json"
+    if not log_path.exists():
+        return None
+    with log_path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    return data if isinstance(data, dict) else {"entries": data}
+
+
 def extract_pattern_id(filename: str) -> int | None:
     stem = Path(filename).stem
     patterns = [
@@ -224,7 +235,17 @@ def _flatten_scan_log_entries(data: Any) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     if isinstance(data, dict):
         if any(k in data for k in ("pattern_id", "patternId", "id", "index")) and any(
-            k in data for k in ("file", "filename", "path", "image")
+            k in data
+            for k in (
+                "file",
+                "filename",
+                "path",
+                "image",
+                "image_path",
+                "relative_path",
+                "received_image_filename",
+                "received_image_relative_path",
+            )
         ):
             entries.append(data)
         for value in data.values():
@@ -248,25 +269,42 @@ def _entry_pattern_id(entry: dict[str, Any]) -> int | None:
 
 
 def _entry_file(entry: dict[str, Any]) -> str | None:
-    for key in ("file", "filename", "path", "image", "image_path"):
+    value, _priority = _entry_file_with_priority(entry)
+    return value
+
+
+def _entry_file_with_priority(entry: dict[str, Any]) -> tuple[str | None, str]:
+    for key in (
+        "file",
+        "filename",
+        "path",
+        "image",
+        "image_path",
+        "relative_path",
+    ):
         value = entry.get(key)
         if isinstance(value, str) and value:
-            return value
-    return None
+            return value, "primary"
+    for key in (
+        "received_image_filename",
+        "received_image_relative_path",
+    ):
+        value = entry.get(key)
+        if isinstance(value, str) and value:
+            return value, "received"
+    return None, "none"
 
 
 def map_patterns_from_scan_log(input_dir: Path) -> dict[int, Path]:
-    log_path = input_dir / "scan_log.json"
-    if not log_path.exists():
+    data = load_scan_log(input_dir)
+    if data is None:
         return {}
 
-    with log_path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-
     mapping: dict[int, Path] = {}
+    received_mapping: dict[int, Path] = {}
     for entry in _flatten_scan_log_entries(data):
         pattern_id = _entry_pattern_id(entry)
-        file_value = _entry_file(entry)
+        file_value, priority = _entry_file_with_priority(entry)
         if pattern_id is None or file_value is None:
             continue
 
@@ -274,8 +312,91 @@ def map_patterns_from_scan_log(input_dir: Path) -> dict[int, Path]:
         if not candidate.is_absolute():
             candidate = input_dir / candidate
         if candidate.exists() and candidate.suffix.lower() in IMAGE_EXTENSIONS:
-            mapping[pattern_id] = candidate
+            if priority == "received":
+                received_mapping.setdefault(pattern_id, candidate)
+            else:
+                mapping[pattern_id] = candidate
+    for pattern_id, candidate in received_mapping.items():
+        mapping.setdefault(pattern_id, candidate)
     return mapping
+
+
+def has_decode_pattern_files(
+    input_dir: Path,
+    required_ids: Sequence[int] = tuple(range(14)),
+) -> bool:
+    input_dir = Path(input_dir).expanduser().resolve()
+    if not input_dir.exists() or not input_dir.is_dir():
+        return False
+    mapping = dict(map_patterns_by_filename(input_dir))
+    mapping.update(map_patterns_from_scan_log(input_dir))
+    return all(pattern_id in mapping for pattern_id in required_ids)
+
+
+def resolve_decode_input_dir(input_dir: Path, preferred_angle: int | None = None) -> Path:
+    """Resolve a PRO4500 phone scan root to its decoder-ready angle folder."""
+    root = Path(input_dir).expanduser().resolve()
+    if has_decode_pattern_files(root):
+        return root
+
+    candidates: list[Path] = []
+    if preferred_angle is not None:
+        candidates.extend(_angle_folder_candidates(root, preferred_angle))
+    candidates.extend(_decode_folders_from_scan_log(root, preferred_angle))
+
+    if preferred_angle is None:
+        angle_dirs = sorted(
+            path
+            for path in root.iterdir()
+            if path.is_dir() and re.fullmatch(r"(?:angle|deg)_\d{1,3}", path.name)
+        ) if root.exists() and root.is_dir() else []
+        candidates.extend(angle_dirs)
+        candidates.extend(_angle_folder_candidates(root, 0))
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        candidate = candidate.expanduser().resolve()
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if has_decode_pattern_files(candidate):
+            return candidate
+    return root
+
+
+def _angle_folder_candidates(root: Path, angle: int) -> list[Path]:
+    return [
+        root / f"angle_{angle:03d}",
+        root / f"angle_{angle}",
+        root / f"deg_{angle:03d}",
+        root / f"deg_{angle}",
+    ]
+
+
+def _decode_folders_from_scan_log(root: Path, preferred_angle: int | None) -> list[Path]:
+    data = load_scan_log(root)
+    if data is None:
+        return []
+    folders = data.get("decode_folders")
+    if not isinstance(folders, list):
+        return []
+
+    candidates: list[Path] = []
+    for value in folders:
+        if not isinstance(value, str) or not value:
+            continue
+        candidate = Path(value)
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        if preferred_angle is not None and not _folder_matches_angle(candidate, preferred_angle):
+            continue
+        candidates.append(candidate)
+    return candidates
+
+
+def _folder_matches_angle(path: Path, angle: int) -> bool:
+    normalized = path.name.lower()
+    return normalized in {f"angle_{angle:03d}", f"angle_{angle}", f"deg_{angle:03d}", f"deg_{angle}"}
 
 
 def map_patterns_by_filename(input_dir: Path) -> dict[int, Path]:
@@ -345,4 +466,116 @@ def load_pattern_set(
         files[pattern_id] = path
 
     assert shape is not None
-    return PatternSet(input_dir=input_dir, images=images, files=files, shape=shape)
+    scan_log = load_scan_log(input_dir)
+    return PatternSet(
+        input_dir=input_dir,
+        images=images,
+        files=files,
+        shape=shape,
+        scan_log=scan_log,
+        capture_summary=summarize_phone_capture(input_dir, files, scan_log),
+    )
+
+
+def summarize_phone_capture(
+    input_dir: Path,
+    files: Mapping[int, Path],
+    scan_log: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    data = scan_log if scan_log is not None else load_scan_log(input_dir)
+    suffixes = sorted({path.suffix.lower() for path in files.values()})
+    inverted_gray_ids = [pattern_id for pattern_id in range(14, 22) if pattern_id in files]
+    summary: dict[str, Any] = {
+        "available": data is not None,
+        "input_dir": str(input_dir),
+        "final_pattern_count": len(files),
+        "final_image_suffixes": suffixes,
+        "inverted_gray_count": len(inverted_gray_ids),
+        "warnings": [],
+    }
+    warnings: list[str] = summary["warnings"]
+
+    if any(suffix in {".jpg", ".jpeg"} for suffix in suffixes):
+        warnings.append(
+            "Final decoder images include JPEG files; phone PNG/HDR-merged PNG is preferred."
+        )
+    if len(inverted_gray_ids) < 8:
+        warnings.append(
+            "Inverted Gray frames 14..21 are incomplete; phone captures are more stable with normal/inverted pairs."
+        )
+    if data is None:
+        warnings.append("scan_log.json was not found; phone capture settings cannot be audited.")
+        return summary
+
+    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+    settings = data.get("settings") if isinstance(data.get("settings"), dict) else {}
+    hdr = data.get("hdr") if isinstance(data.get("hdr"), dict) else {}
+    rows = data.get("rows") if isinstance(data.get("rows"), list) else []
+
+    summary.update(
+        {
+            "scan_id": data.get("scan_id"),
+            "status": data.get("status"),
+            "scan_type": data.get("scan_type") or metadata.get("scan_type"),
+            "decode_dir": data.get("decode_dir"),
+            "angles_deg": data.get("angles_deg"),
+            "projector_tilt_deg": metadata.get("projector_tilt_deg"),
+            "phone_mount_id": metadata.get("phone_mount_id"),
+            "rig_id": metadata.get("rig_id"),
+            "calibration_id": metadata.get("calibration_id"),
+            "manual": settings.get("manual"),
+            "manual_focus": settings.get("manual_focus"),
+            "manual_focus_confirmed": metadata.get("manual_focus_confirmed"),
+            "awb_locked": settings.get("awb_locked"),
+            "focus_diopters": settings.get("focus_diopters"),
+            "hdr": {
+                "enabled": hdr.get("enabled"),
+                "bit_depth": hdr.get("bit_depth"),
+                "bracket_count": len(hdr.get("brackets", []))
+                if isinstance(hdr.get("brackets"), list)
+                else 0,
+                "saturated_threshold": hdr.get("saturated_threshold"),
+                "dark_threshold": hdr.get("dark_threshold"),
+            },
+            "row_count": len(rows),
+        }
+    )
+
+    if data.get("status") not in (None, "ok"):
+        warnings.append(f"scan_log status is {data.get('status')!r}.")
+    if settings.get("manual") is not True:
+        warnings.append("Manual exposure/ISO mode is not confirmed in scan_log settings.")
+    if settings.get("manual_focus") is not True:
+        warnings.append("Manual focus mode is not confirmed in scan_log settings.")
+    if settings.get("awb_locked") is not True:
+        warnings.append("AWB lock is not confirmed; pattern-to-pattern color balance may drift.")
+    if metadata.get("manual_focus_confirmed") is not True:
+        warnings.append("manual_focus_confirmed metadata is not true.")
+    if metadata.get("keystone_predistortion") is True:
+        warnings.append(
+            "Projector keystone pre-distortion is enabled; reference phase subtraction expects raw projector geometry."
+        )
+    if hdr.get("enabled") is not True:
+        warnings.append("HDR bracket merge is not marked enabled; solder glare may reduce valid pixels.")
+
+    focus_values = _unique_nonempty(row.get("focus_diopters") for row in rows if isinstance(row, dict))
+    if len(focus_values) > 1:
+        warnings.append("Focus metadata varies across captured frames.")
+
+    if hdr.get("enabled") is not True:
+        exposure_values = _unique_nonempty(row.get("exposure_us") for row in rows if isinstance(row, dict))
+        iso_values = _unique_nonempty(row.get("iso") for row in rows if isinstance(row, dict))
+        if len(exposure_values) > 1 or len(iso_values) > 1:
+            warnings.append("Exposure/ISO varies without HDR metadata.")
+
+    return summary
+
+
+def _unique_nonempty(values: Iterable[Any]) -> list[Any]:
+    unique: list[Any] = []
+    for value in values:
+        if value in (None, ""):
+            continue
+        if value not in unique:
+            unique.append(value)
+    return unique
