@@ -127,6 +127,28 @@ def _paste_corner_aruco_markers(folder: Path, image_name: str = "pattern_000.png
     image.save(image_path)
 
 
+def _paste_stage_cross_aruco_markers(folder: Path, image_name: str = "pattern_000.png") -> None:
+    image_path = folder / image_name
+    image = Image.open(image_path).convert("L")
+    marker_positions = {
+        0: (100, 40),
+        1: (160, 100),
+        2: (100, 160),
+        3: (40, 100),
+    }
+    for marker_id, xy in marker_positions.items():
+        marker, _marker_pixels, _quiet_pixels = generate_marker_image(
+            marker_id,
+            "DICT_4X4_50",
+            marker_size_mm=8.0,
+            quiet_zone_mm=2.0,
+            dpi=127,
+            label=False,
+        )
+        image.paste(marker, xy)
+    image.save(image_path)
+
+
 def test_synthetic_scan_end_to_end(tmp_path):
     input_dir = tmp_path / "captures" / "scan_001" / "deg_0"
     output_dir = tmp_path / "processed" / "scan_001" / "deg_0"
@@ -214,6 +236,51 @@ def test_aruco_analysis_roi_limits_height_to_centered_pcb_size(tmp_path):
     assert np.count_nonzero(result.analysis_roi.mask) > np.count_nonzero(
         no_margin.analysis_roi.mask
     )
+
+
+def test_stage_cross_aruco_analysis_roi_masks_non_pcb_stage_paper(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    if not hasattr(cv2, "aruco"):
+        pytest.skip("OpenCV ArUco module is not available")
+
+    input_dir = tmp_path / "captures" / "scan_stage_roi" / "deg_0"
+    output_dir = tmp_path / "processed" / "scan_stage_roi" / "deg_0"
+    _write_synthetic_scan(input_dir, width=260, height=260)
+    _paste_stage_cross_aruco_markers(input_dir)
+
+    config = DecodeConfig(
+        min_signal=20,
+        saturation_threshold=250,
+        dark_threshold=5,
+        modulation_threshold=0.05,
+        median_filter=0,
+        analysis_roi_mode="aruco",
+        analysis_aruco_layout="stage-cross",
+        analysis_aruco_ids=(0, 1, 2, 3),
+        analysis_marker_center_radius_mm=30.0,
+        analysis_stage_diameter_mm=105.0,
+        pcb_width_mm=30.0,
+        pcb_height_mm=30.0,
+        pcb_margin_mm=0.0,
+    )
+    result = PcbFppDecoder(config).decode(input_dir, output_dir)
+
+    assert result.analysis_roi is not None
+    assert (output_dir / "masks" / "analysis_roi_mask.png").exists()
+    assert (output_dir / "masks" / "marker_space_mask.png").exists()
+    assert (output_dir / "masks" / "pcb_analysis_mask.png").exists()
+    assert np.count_nonzero(result.analysis_roi.mask) < np.count_nonzero(
+        result.analysis_roi.marker_space_mask
+    )
+    assert np.all(np.isnan(result.height.height[~result.analysis_roi.mask]))
+    roi_report = result.report["analysis_roi"]
+    assert roi_report["layout"] == "stage-cross"
+    assert roi_report["marker_order"] == "top,right,bottom,left"
+    assert roi_report["stage_layout_mm"]["marker_center_radius"] == 30.0
+    assert roi_report["stage_layout_mm"]["stage_diameter"] == 105.0
+    assert roi_report["pcb_size_mm"]["width"] == 30.0
+    assert roi_report["pcb_size_mm"]["effective_width"] == 30.0
+    assert result.report["mask_coverage"]["combined_mask_ratio"] < 0.1
 
 
 def test_cli_resolves_pro4500_phone_scan_root_angle_folder(tmp_path):

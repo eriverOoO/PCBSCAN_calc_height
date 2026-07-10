@@ -94,8 +94,11 @@ class DecodeConfig:
     analysis_aruco_dictionary: str = "DICT_4X4_50"
     analysis_aruco_ids: tuple[int, ...] = (0, 1, 2, 3)
     analysis_aruco_image: str = "pattern_000.png"
+    analysis_aruco_layout: str = "corners"
     analysis_workspace_width_mm: float | None = None
     analysis_workspace_height_mm: float | None = None
+    analysis_marker_center_radius_mm: float | None = None
+    analysis_stage_diameter_mm: float | None = None
     pcb_width_mm: float | None = None
     pcb_height_mm: float | None = None
     pcb_margin_mm: float = 0.0
@@ -522,8 +525,11 @@ class PcbFppDecoder:
             dictionary_name=self.config.analysis_aruco_dictionary,
             marker_ids=self.config.analysis_aruco_ids,
             image_name=self.config.analysis_aruco_image,
+            layout=self.config.analysis_aruco_layout,
             workspace_width_mm=self.config.analysis_workspace_width_mm,
             workspace_height_mm=self.config.analysis_workspace_height_mm,
+            marker_center_radius_mm=self.config.analysis_marker_center_radius_mm,
+            stage_diameter_mm=self.config.analysis_stage_diameter_mm,
             pcb_width_mm=self.config.pcb_width_mm,
             pcb_height_mm=self.config.pcb_height_mm,
             pcb_margin_mm=self.config.pcb_margin_mm,

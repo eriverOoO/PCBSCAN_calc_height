@@ -33,8 +33,11 @@ def estimate_aruco_analysis_roi(
     dictionary_name: str = "DICT_4X4_50",
     marker_ids: Sequence[int] = (0, 1, 2, 3),
     image_name: str = "pattern_000.png",
+    layout: str = "corners",
     workspace_width_mm: float | None = None,
     workspace_height_mm: float | None = None,
+    marker_center_radius_mm: float | None = None,
+    stage_diameter_mm: float | None = None,
     pcb_width_mm: float | None = None,
     pcb_height_mm: float | None = None,
     pcb_margin_mm: float = 0.0,
@@ -43,8 +46,11 @@ def estimate_aruco_analysis_roi(
     pcb_margin_mm = float(pcb_margin_mm)
     _validate_roi_inputs(
         marker_ids,
+        layout,
         workspace_width_mm,
         workspace_height_mm,
+        marker_center_radius_mm,
+        stage_diameter_mm,
         pcb_width_mm,
         pcb_height_mm,
         pcb_margin_mm,
@@ -68,6 +74,21 @@ def estimate_aruco_analysis_roi(
         )
 
     requested_markers = [detected_by_id[marker_id] for marker_id in marker_ids]
+    if layout == "stage-cross":
+        return _estimate_stage_cross_roi(
+            shape,
+            input_dir=Path(input_dir),
+            image_name=image_name,
+            dictionary_name=dictionary_name,
+            requested_marker_ids=marker_ids,
+            requested_markers=requested_markers,
+            marker_center_radius_mm=float(marker_center_radius_mm),
+            stage_diameter_mm=stage_diameter_mm,
+            pcb_width_mm=float(pcb_width_mm),
+            pcb_height_mm=float(pcb_height_mm),
+            pcb_margin_mm=pcb_margin_mm,
+        )
+
     ordered_markers = _order_markers_by_center(requested_markers)
     center = np.mean([marker.center for marker in ordered_markers], axis=0)
     inner_corners = np.asarray(
@@ -143,8 +164,11 @@ def estimate_aruco_analysis_roi(
 
 def _validate_roi_inputs(
     marker_ids: tuple[int, ...],
+    layout: str,
     workspace_width_mm: float | None,
     workspace_height_mm: float | None,
+    marker_center_radius_mm: float | None,
+    stage_diameter_mm: float | None,
     pcb_width_mm: float | None,
     pcb_height_mm: float | None,
     pcb_margin_mm: float,
@@ -153,6 +177,8 @@ def _validate_roi_inputs(
         raise ValueError("ArUco analysis ROI requires exactly four marker IDs")
     if len(set(marker_ids)) != len(marker_ids):
         raise ValueError("ArUco analysis ROI marker IDs must be unique")
+    if layout not in {"corners", "stage-cross"}:
+        raise ValueError("ArUco analysis ROI layout must be corners or stage-cross")
 
     _validate_size_pair("analysis workspace", workspace_width_mm, workspace_height_mm)
     _validate_size_pair("PCB", pcb_width_mm, pcb_height_mm)
@@ -162,10 +188,32 @@ def _validate_roi_inputs(
     pcb_size_given = pcb_width_mm is not None or pcb_height_mm is not None
     workspace_size_given = workspace_width_mm is not None or workspace_height_mm is not None
     if pcb_size_given and not workspace_size_given:
-        raise ValueError(
-            "PCB size in mm requires analysis workspace width/height in mm so pixels "
-            "can be mapped to physical size"
-        )
+        if layout == "corners":
+            raise ValueError(
+                "PCB size in mm requires analysis workspace width/height in mm so pixels "
+                "can be mapped to physical size"
+            )
+    if (
+        layout == "corners"
+        and pcb_width_mm is not None
+        and pcb_height_mm is not None
+        and workspace_width_mm is not None
+        and workspace_height_mm is not None
+    ):
+        if pcb_width_mm > workspace_width_mm or pcb_height_mm > workspace_height_mm:
+            raise ValueError("PCB size must not exceed the ArUco marker-space workspace size")
+
+    if layout == "stage-cross":
+        if marker_center_radius_mm is None or marker_center_radius_mm <= 0:
+            raise ValueError("stage-cross analysis ROI requires positive marker center radius")
+        if pcb_width_mm is None or pcb_height_mm is None:
+            raise ValueError("stage-cross analysis ROI requires PCB width and height in mm")
+        if stage_diameter_mm is not None and stage_diameter_mm <= 0:
+            raise ValueError("stage diameter must be positive")
+        if stage_diameter_mm is not None and marker_center_radius_mm > 0.5 * stage_diameter_mm:
+            raise ValueError("marker center radius must fit inside the stage diameter")
+        return
+
     if (
         pcb_width_mm is not None
         and pcb_height_mm is not None
@@ -174,6 +222,101 @@ def _validate_roi_inputs(
     ):
         if pcb_width_mm > workspace_width_mm or pcb_height_mm > workspace_height_mm:
             raise ValueError("PCB size must not exceed the ArUco marker-space workspace size")
+
+
+def _estimate_stage_cross_roi(
+    shape: tuple[int, int],
+    *,
+    input_dir: Path,
+    image_name: str,
+    dictionary_name: str,
+    requested_marker_ids: tuple[int, ...],
+    requested_markers: Sequence[DetectedMarker],
+    marker_center_radius_mm: float,
+    stage_diameter_mm: float | None,
+    pcb_width_mm: float,
+    pcb_height_mm: float,
+    pcb_margin_mm: float,
+) -> AnalysisRoiResult:
+    cv2 = _load_cv2()
+    # IDs are interpreted in fixed physical order: top, right, bottom, left.
+    image_centers = np.asarray([marker.center for marker in requested_markers], dtype=np.float32)
+    stage_centers_mm = np.asarray(
+        [
+            [0.0, -marker_center_radius_mm],
+            [marker_center_radius_mm, 0.0],
+            [0.0, marker_center_radius_mm],
+            [-marker_center_radius_mm, 0.0],
+        ],
+        dtype=np.float32,
+    )
+    homography, inliers = cv2.findHomography(image_centers, stage_centers_mm, method=0)
+    if homography is None:
+        raise ValueError("Could not estimate stage-cross ArUco ROI homography")
+
+    stage_x, stage_y = _project_grid(shape, homography.astype(np.float32))
+    stage_mask = np.isfinite(stage_x) & np.isfinite(stage_y)
+    if stage_diameter_mm is not None:
+        stage_radius_mm = 0.5 * float(stage_diameter_mm)
+        stage_mask = stage_mask & (
+            (stage_x * stage_x + stage_y * stage_y) <= stage_radius_mm * stage_radius_mm
+        )
+
+    effective_pcb_width_mm = float(pcb_width_mm) + 2.0 * pcb_margin_mm
+    effective_pcb_height_mm = float(pcb_height_mm) + 2.0 * pcb_margin_mm
+    if stage_diameter_mm is not None:
+        effective_pcb_width_mm = min(float(stage_diameter_mm), effective_pcb_width_mm)
+        effective_pcb_height_mm = min(float(stage_diameter_mm), effective_pcb_height_mm)
+    pcb_mask = (
+        stage_mask
+        & (np.abs(stage_x) <= 0.5 * effective_pcb_width_mm)
+        & (np.abs(stage_y) <= 0.5 * effective_pcb_height_mm)
+    )
+    analysis_mask = pcb_mask & stage_mask
+    pcb_corners_mm = np.asarray(
+        [
+            [-0.5 * effective_pcb_width_mm, -0.5 * effective_pcb_height_mm],
+            [0.5 * effective_pcb_width_mm, -0.5 * effective_pcb_height_mm],
+            [0.5 * effective_pcb_width_mm, 0.5 * effective_pcb_height_mm],
+            [-0.5 * effective_pcb_width_mm, 0.5 * effective_pcb_height_mm],
+        ],
+        dtype=np.float32,
+    )
+    image_pcb_corners = _project_points_with_homography(pcb_corners_mm, np.linalg.inv(homography))
+    bbox = _mask_bounding_box(stage_mask)
+    report = _build_report(
+        shape,
+        input_dir=input_dir,
+        image_name=image_name,
+        dictionary_name=dictionary_name,
+        requested_marker_ids=requested_marker_ids,
+        ordered_markers=requested_markers,
+        marker_space_corners=image_pcb_corners,
+        marker_space_mask=stage_mask,
+        analysis_mask=analysis_mask,
+        pcb_mask=pcb_mask,
+        bounding_box_xywh=bbox,
+        workspace_width_mm=None,
+        workspace_height_mm=None,
+        pcb_width_mm=pcb_width_mm,
+        pcb_height_mm=pcb_height_mm,
+        pcb_margin_mm=pcb_margin_mm,
+        workspace_homography=homography.astype(np.float32),
+        layout="stage-cross",
+        marker_center_radius_mm=marker_center_radius_mm,
+        stage_diameter_mm=stage_diameter_mm,
+    )
+
+    return AnalysisRoiResult(
+        mask=analysis_mask.astype(bool),
+        marker_space_mask=stage_mask.astype(bool),
+        pcb_mask=pcb_mask.astype(bool),
+        marker_ids=requested_marker_ids,
+        ordered_marker_ids=tuple(marker.marker_id for marker in requested_markers),
+        marker_space_corners=image_pcb_corners.astype(float).tolist(),
+        bounding_box_xywh=bbox,
+        report=report,
+    )
 
 
 def _validate_size_pair(name: str, width_mm: float | None, height_mm: float | None) -> None:
@@ -304,6 +447,13 @@ def _project_grid(shape: tuple[int, int], homography: np.ndarray) -> tuple[np.nd
     return workspace_x.astype(np.float32), workspace_y.astype(np.float32)
 
 
+def _project_points_with_homography(points: np.ndarray, homography: np.ndarray) -> np.ndarray:
+    points = np.asarray(points, dtype=np.float32)
+    ones = np.ones((points.shape[0], 1), dtype=np.float32)
+    projected = np.concatenate([points, ones], axis=1) @ homography.T
+    return (projected[:, :2] / projected[:, 2:3]).astype(np.float32)
+
+
 def _mask_bounding_box(mask: np.ndarray) -> tuple[int, int, int, int]:
     rows, cols = np.nonzero(mask)
     if rows.size == 0 or cols.size == 0:
@@ -334,15 +484,29 @@ def _build_report(
     pcb_height_mm: float | None,
     pcb_margin_mm: float,
     workspace_homography: np.ndarray | None,
+    layout: str = "corners",
+    marker_center_radius_mm: float | None = None,
+    stage_diameter_mm: float | None = None,
 ) -> dict[str, Any]:
     total = int(np.prod(shape))
+    effective_pcb_size_mm = _effective_pcb_size_report(
+        layout=layout,
+        workspace_width_mm=workspace_width_mm,
+        workspace_height_mm=workspace_height_mm,
+        stage_diameter_mm=stage_diameter_mm,
+        pcb_width_mm=pcb_width_mm,
+        pcb_height_mm=pcb_height_mm,
+        pcb_margin_mm=pcb_margin_mm,
+    )
     return {
         "enabled": True,
         "mode": "aruco",
+        "layout": layout,
         "input_dir": str(input_dir),
         "image": image_name,
         "dictionary": dictionary_name,
         "requested_marker_ids": list(requested_marker_ids),
+        "marker_order": "top,right,bottom,left" if layout == "stage-cross" else "tl,tr,br,bl",
         "ordered_marker_ids_tl_tr_br_bl": [marker.marker_id for marker in ordered_markers],
         "marker_space_corners_tl_tr_br_bl": marker_space_corners.astype(float).tolist(),
         "bounding_box_xywh": list(bounding_box_xywh),
@@ -354,21 +518,21 @@ def _build_report(
             if workspace_width_mm is not None and workspace_height_mm is not None
             else None
         ),
+        "stage_layout_mm": (
+            {
+                "marker_center_radius": float(marker_center_radius_mm),
+                "stage_diameter": float(stage_diameter_mm) if stage_diameter_mm is not None else None,
+            }
+            if layout == "stage-cross"
+            else None
+        ),
         "pcb_size_mm": (
             {
                 "width": float(pcb_width_mm),
                 "height": float(pcb_height_mm),
                 "margin": float(pcb_margin_mm),
-                "effective_width": float(
-                    min(float(workspace_width_mm), float(pcb_width_mm) + 2.0 * pcb_margin_mm)
-                )
-                if workspace_width_mm is not None
-                else None,
-                "effective_height": float(
-                    min(float(workspace_height_mm), float(pcb_height_mm) + 2.0 * pcb_margin_mm)
-                )
-                if workspace_height_mm is not None
-                else None,
+                "effective_width": effective_pcb_size_mm[0],
+                "effective_height": effective_pcb_size_mm[1],
                 "assumed_centered": True,
             }
             if pcb_width_mm is not None and pcb_height_mm is not None
@@ -386,3 +550,32 @@ def _build_report(
         ),
         "markers": [asdict(marker) for marker in ordered_markers],
     }
+
+
+def _effective_pcb_size_report(
+    *,
+    layout: str,
+    workspace_width_mm: float | None,
+    workspace_height_mm: float | None,
+    stage_diameter_mm: float | None,
+    pcb_width_mm: float | None,
+    pcb_height_mm: float | None,
+    pcb_margin_mm: float,
+) -> tuple[float | None, float | None]:
+    if pcb_width_mm is None or pcb_height_mm is None:
+        return None, None
+
+    effective_width = float(pcb_width_mm) + 2.0 * pcb_margin_mm
+    effective_height = float(pcb_height_mm) + 2.0 * pcb_margin_mm
+    if layout == "stage-cross":
+        if stage_diameter_mm is not None:
+            effective_width = min(float(stage_diameter_mm), effective_width)
+            effective_height = min(float(stage_diameter_mm), effective_height)
+        return float(effective_width), float(effective_height)
+
+    if workspace_width_mm is None or workspace_height_mm is None:
+        return None, None
+    return (
+        float(min(float(workspace_width_mm), effective_width)),
+        float(min(float(workspace_height_mm), effective_height)),
+    )

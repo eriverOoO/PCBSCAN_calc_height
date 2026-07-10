@@ -157,6 +157,24 @@ python scripts/decode_scan.py \
 
 보정은 출력 치수나 부착 치수를 신뢰해서 계산하지 않습니다. 실제 촬영된 `pattern_000.png`에서 마커 코너를 검출하고, `deg_180`의 코너들이 `deg_0` 코너들과 가장 잘 맞도록 RANSAC 기반 homography를 추정합니다. 따라서 프린터 배율, 자름, 부착 위치가 조금 틀어져도 두 촬영 이미지에서 마커가 선명하게 검출되면 그 실제 오차가 transform에 반영됩니다.
 
+원판을 A4에서 잘라 붙이면 마커 주변의 흰 종이 영역도 촬영됩니다. 이 영역은 마커 검출에는 필요하지만 높이 계산에는 들어가면 안 되므로, 디코딩 시 ArUco 기반 analysis ROI를 함께 켭니다. `stage-cross` 레이아웃은 ID 0/1/2/3 마커 중심을 각각 위/오른쪽/아래/왼쪽 기준점으로 보고 스테이지 좌표계를 만든 뒤, 중심에 놓인 30 x 30 mm PCB 영역만 남깁니다. 이렇게 하면 PCB가 가리지 못한 마커 안쪽 흰 종이 영역은 `combined_mask`와 height map에서 제외됩니다.
+
+```powershell
+.venv\Scripts\python.exe scripts\decode_scan.py `
+  --input captures\scan_xxx\deg_0 `
+  --output processed\scan_xxx\deg_0 `
+  --analysis-roi aruco `
+  --analysis-aruco-layout stage-cross `
+  --analysis-aruco-ids 0,1,2,3 `
+  --analysis-marker-center-radius-mm 30 `
+  --analysis-stage-diameter-mm 105 `
+  --pcb-width-mm 30 `
+  --pcb-height-mm 30 `
+  --pcb-margin-mm 0
+```
+
+출력 폴더의 `masks/analysis_roi_mask.png`, `masks/marker_space_mask.png`, `masks/pcb_analysis_mask.png`를 확인하면 실제로 어느 영역이 계산에 사용됐는지 볼 수 있습니다. PCB를 중심에서 의도적으로 벗어나게 붙이는 경우에는 현재 옵션 대신 별도 PCB 위치 기준점이나 수동 ROI가 필요합니다.
+
 촬영 후에는 White 프레임인 `pattern_000.png`에서 ID 0/1/2/3 마커를 검출해 fusion transform을 생성합니다.
 
 ```powershell

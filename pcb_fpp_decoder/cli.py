@@ -150,11 +150,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--fusion-registration",
         choices=FUSION_REGISTRATION_CHOICES,
-        default="rotation-180",
+        default="aruco",
         help=(
             "Estimate a fusion transform automatically before decoding. "
             "rotation-180 uses the nominal center rotation; aruco detects markers; "
-            "phase-correlation refines residual x/y translation."
+            "phase-correlation refines residual x/y translation. Default: aruco."
         ),
     )
     parser.add_argument(
@@ -188,8 +188,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--analysis-roi",
         choices=("none", "aruco"),
-        default="none",
-        help="Limit decoding to an analysis ROI. aruco uses the space between four markers.",
+        default="aruco",
+        help=(
+            "Limit decoding to an analysis ROI. Default: aruco. Use none for scans "
+            "without stage markers."
+        ),
     )
     parser.add_argument(
         "--analysis-aruco-dictionary",
@@ -209,6 +212,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Image file used for analysis ROI marker detection",
     )
     parser.add_argument(
+        "--analysis-aruco-layout",
+        choices=("corners", "stage-cross"),
+        default="stage-cross",
+        help=(
+            "corners treats four markers as workspace corners; stage-cross treats "
+            "IDs as top,right,bottom,left around the rotation stage center. "
+            "Default: stage-cross."
+        ),
+    )
+    parser.add_argument(
         "--analysis-workspace-width-mm",
         type=float,
         help="Physical width between the four marker-space corners, in millimeters",
@@ -219,14 +232,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Physical height between the four marker-space corners, in millimeters",
     )
     parser.add_argument(
+        "--analysis-marker-center-radius-mm",
+        type=float,
+        default=30.0,
+        help="For --analysis-aruco-layout stage-cross, marker center radius from stage center",
+    )
+    parser.add_argument(
+        "--analysis-stage-diameter-mm",
+        type=float,
+        default=105.0,
+        help="For --analysis-aruco-layout stage-cross, optional stage diameter in millimeters",
+    )
+    parser.add_argument(
         "--pcb-width-mm",
         type=float,
-        help="PCB width in millimeters. Requires analysis workspace width/height.",
+        default=30.0,
+        help="PCB width in millimeters. Default: 30.",
     )
     parser.add_argument(
         "--pcb-height-mm",
         type=float,
-        help="PCB height in millimeters. Requires analysis workspace width/height.",
+        default=30.0,
+        help="PCB height in millimeters. Default: 30.",
     )
     parser.add_argument(
         "--pcb-margin-mm",
@@ -257,6 +284,8 @@ def config_from_args(args: argparse.Namespace) -> DecodeConfig:
         for value in (
             args.analysis_workspace_width_mm,
             args.analysis_workspace_height_mm,
+            args.analysis_marker_center_radius_mm,
+            args.analysis_stage_diameter_mm,
             args.pcb_width_mm,
             args.pcb_height_mm,
             args.pcb_margin_mm if args.pcb_margin_mm else None,
@@ -296,8 +325,11 @@ def config_from_args(args: argparse.Namespace) -> DecodeConfig:
         analysis_aruco_dictionary=args.analysis_aruco_dictionary,
         analysis_aruco_ids=tuple(args.analysis_aruco_ids),
         analysis_aruco_image=args.analysis_aruco_image,
+        analysis_aruco_layout=args.analysis_aruco_layout,
         analysis_workspace_width_mm=args.analysis_workspace_width_mm,
         analysis_workspace_height_mm=args.analysis_workspace_height_mm,
+        analysis_marker_center_radius_mm=args.analysis_marker_center_radius_mm,
+        analysis_stage_diameter_mm=args.analysis_stage_diameter_mm,
         pcb_width_mm=args.pcb_width_mm,
         pcb_height_mm=args.pcb_height_mm,
         pcb_margin_mm=args.pcb_margin_mm,
@@ -328,7 +360,7 @@ def main(argv: list[str] | None = None) -> int:
 
     config = config_from_args(args)
     try:
-        estimated_transform = _prepare_fusion_registration(args, config)
+        estimated_transform = _prepare_fusion_registration(args, config) if args.input_180 else None
         decoder = PcbFppDecoder(config)
         if args.input_180:
             result = decoder.decode_fused(args.input, args.input_180, args.output)
