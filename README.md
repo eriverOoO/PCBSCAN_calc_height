@@ -71,10 +71,10 @@ Windows PowerShell에서는 위 예시의 `\` 대신 한 줄로 실행하거나 
 
 ## Android 폰 촬영 입력
 
-`PRO4500_Control_System`의 Android 촬영 워크플로는 보통 다음 구조를 만듭니다.
+Android 촬영 워크플로는 보통 다음과 같은 스캔 폴더 구조를 만듭니다. 실제 저장 위치는 사용자의 장비 제어 프로그램 설정에 맞게 달라질 수 있습니다.
 
 ```text
-captures/scan_YYYYMMDD_HHMMSS/
+captures/<scan_id>/
   angle_000/
     pattern_000.png
     ...
@@ -88,12 +88,12 @@ captures/scan_YYYYMMDD_HHMMSS/
     ...
 ```
 
-이제 `--input`에 스캔 루트를 넘겨도 decoder-ready `angle_000` 폴더를 자동으로 찾아 사용합니다.
+`--input`에 스캔 루트를 넘겨도 디코더가 사용할 수 있는 `angle_000` 폴더를 자동으로 찾아 사용합니다.
 
 ```powershell
 .venv\Scripts\python.exe scripts\decode_scan.py `
-  --input "C:\Users\shang\OneDrive\바탕 화면\PRO4500_Control_System\captures\scan_YYYYMMDD_HHMMSS" `
-  --output processed\scan_YYYYMMDD_HHMMSS\angle_000 `
+  --input "captures\<scan_id>" `
+  --output "processed\<scan_id>\angle_000" `
   --input-color-mode smartphone_uv_blue `
   --gray-decode-mode auto `
   --median-filter 3
@@ -103,11 +103,11 @@ captures/scan_YYYYMMDD_HHMMSS/
 
 ```powershell
 .venv\Scripts\python.exe scripts\decode_scan.py `
-  --input "C:\Users\shang\OneDrive\바탕 화면\PRO4500_Control_System\captures\scan_YYYYMMDD_HHMMSS" `
-  --output processed\scan_YYYYMMDD_HHMMSS\fused `
+  --input "captures\<scan_id>" `
+  --output "processed\<scan_id>\fused" `
   --auto-phone-fusion `
   --height-mode triangulation `
-  --reference-scan "C:\Users\shang\OneDrive\바탕 화면\PRO4500_Control_System\captures\reference_scan" `
+  --reference-scan "captures\<reference_scan_id>" `
   --calibration-config examples\calibration_config.example.json
 ```
 

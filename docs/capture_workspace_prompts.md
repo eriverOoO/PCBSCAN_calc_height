@@ -1,6 +1,6 @@
 # 촬영 워크스페이스 구현 프롬프트
 
-아래 프롬프트는 현재 디코더 워크스페이스(`Non-planar_calc`)와 호환되는 촬영 워크스페이스를 만들기 위한 요구사항입니다. 촬영 시스템은 다르더라도 저장 포맷과 pattern id 규약은 동일하게 맞추는 것을 목표로 합니다.
+아래 프롬프트는 이 디코더 저장소와 호환되는 촬영 워크스페이스를 만들기 위한 요구사항입니다. 촬영 시스템은 다르더라도 저장 포맷과 pattern id 규약은 동일하게 맞추는 것을 목표로 합니다.
 
 ## 공통 디코더 계약
 
@@ -20,11 +20,11 @@
 
 기준 평면 scan과 대상 scan은 같은 프로젝터 각도, 초점, 카메라 자세, 노출 bracket preset, 프로젝터 밝기 조건에서 촬영해야 합니다.
 
-## 구현 프롬프트: PRO4500_Control_System-UV
+## 구현 프롬프트: UV 카메라 촬영 시스템
 
-작업공간: `C:\Users\shang\OneDrive\바탕 화면\PRO4500_Control_System-UV`
+대상 환경: XIMEA UV 카메라처럼 수동 노출/게인 제어가 가능한 UV 카메라와 PRO4500 계열 구조광 프로젝터를 사용하는 촬영 프로그램
 
-목표: XIMEA UV 카메라와 PRO4500 구조광 촬영 시스템에 반전 Gray code 촬영과 다중 노출 HDR 저장/합성 기능을 추가합니다. 최종 출력은 현재 디코더 워크스페이스 `Non-planar_calc`가 바로 읽을 수 있는 패턴 폴더여야 합니다.
+목표: UV 카메라와 PRO4500 계열 구조광 촬영 시스템에 반전 Gray code 촬영과 다중 노출 HDR 저장/합성 기능을 추가합니다. 최종 출력은 이 디코더가 바로 읽을 수 있는 패턴 폴더여야 합니다.
 
 구현 요구사항:
 
@@ -45,7 +45,7 @@
 15. 프로젝터 keystone 사전 왜곡은 기본으로 하지 않습니다. metadata에 `keystone_predistortion: false`를 기록합니다.
 16. 촬영 완료 후 최종 decode 폴더에 0..21 pattern id가 모두 있는지 검증합니다. 누락되면 오류를 띄우고 누락 id를 표시합니다.
 17. 기존 14장 촬영 모드는 legacy 옵션으로 남겨도 되지만 기본 촬영 모드는 22장 + HDR merge로 합니다.
-18. 저장된 최종 폴더는 `Non-planar_calc` 디코더에서 `--gray-decode-mode auto`로 바로 사용할 수 있어야 합니다.
+18. 저장된 최종 폴더는 이 디코더에서 `--gray-decode-mode auto`로 바로 사용할 수 있어야 합니다.
 
 검증:
 
@@ -54,11 +54,11 @@
 3. `scan_log.json`에 pattern id, label, final filename, bracket filenames, exposure_us, gain_db가 들어가는지 확인합니다.
 4. 같은 평면을 기준/대상으로 연속 촬영했을 때 최종 디코더의 `height/delta_phase.npy`가 거의 0에 가까워져야 합니다.
 
-## 구현 프롬프트: PRO4500_Control_System
+## 구현 프롬프트: Android 폰 카메라 촬영 시스템
 
-작업공간: `C:\Users\shang\OneDrive\바탕 화면\PRO4500_Control_System`
+대상 환경: Android 폰 카메라와 PRO4500 계열 구조광 프로젝터를 사용하는 촬영 프로그램
 
-목표: Android 폰 카메라와 PRO4500 구조광 촬영 시스템에 반전 Gray code 촬영과 다중 노출 HDR 저장/합성 기능을 추가합니다. 최종 출력은 현재 디코더 워크스페이스 `Non-planar_calc`가 바로 읽을 수 있는 패턴 폴더여야 합니다.
+목표: Android 폰 카메라와 PRO4500 계열 구조광 촬영 시스템에 반전 Gray code 촬영과 다중 노출 HDR 저장/합성 기능을 추가합니다. 최종 출력은 이 디코더가 바로 읽을 수 있는 패턴 폴더여야 합니다.
 
 구현 요구사항:
 
@@ -79,7 +79,7 @@
 15. 프로젝터 keystone 사전 왜곡은 기본으로 하지 않습니다. metadata에 `keystone_predistortion: false`를 기록합니다.
 16. 촬영 완료 후 최종 decode 폴더에 0..21 pattern id가 모두 있는지 검증합니다. 누락되면 오류를 띄우고 누락 id를 표시합니다.
 17. 기존 14장 촬영 모드는 legacy 옵션으로 남겨도 되지만 기본 촬영 모드는 22장 + HDR merge로 합니다.
-18. 저장된 최종 폴더는 `Non-planar_calc` 디코더에서 `--gray-decode-mode auto`로 바로 사용할 수 있어야 합니다.
+18. 저장된 최종 폴더는 이 디코더에서 `--gray-decode-mode auto`로 바로 사용할 수 있어야 합니다.
 
 검증:
 
