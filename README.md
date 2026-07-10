@@ -138,34 +138,33 @@ python scripts/decode_scan.py \
 
 로테이션 스테이지가 정확히 180.00도 회전하지 않는 경우에는 PCB에 붙인 ArUco 마커를 이용해 `deg_180` 영상을 `deg_0` 좌표계로 보정할 수 있습니다. 마커 이미지는 저장소에 포함하지 않고, 필요할 때 다음 명령으로 다시 생성합니다.
 
-30 mm x 30 mm PCB의 대각 코너에 붙일 때는 마커 전체 크기가 15 mm 이내인 버전을 권장합니다. 아래 명령은 ID 0, ID 1 두 개를 A4 PDF로 만들며, 검은 ArUco 본체는 약 11.4 mm, 흰 여백 포함 전체 크기는 약 15 mm입니다.
+스테이지 원판 전체에 붙일 때는 실제 스테이지에 맞는 레이아웃을 생성해 사용합니다. 아래 명령은 지름 105 mm 원판 안에 ID 0, 1, 2, 3 마커를 위/오른쪽/아래/왼쪽 순서로 배치합니다. 각 마커 중심은 원판 중심에서 30 mm 떨어지고, 흰 여백 포함 전체 마커 크기는 약 15 mm입니다.
 
 ```powershell
-.venv\Scripts\python.exe scripts\generate_aruco_marker.py `
-  --ids 0,1 `
+.venv\Scripts\python.exe scripts\generate_aruco_stage_layout.py `
+  --ids 0,1,2,3 `
   --dictionary DICT_4X4_50 `
-  --marker-size-mm 11.4 `
+  --stage-diameter-mm 105 `
+  --marker-radius-mm 30 `
+  --marker-total-mm 15 `
   --quiet-zone-mm 1.8 `
   --dpi 300 `
-  --format both `
-  --no-label `
-  --sheet a4 `
-  --sheet-format both `
-  --prefix aruco_total15mm `
-  --sheet-prefix aruco_total15mm_sheet `
-  --output aruco_markers_a4_total15mm
+  --output aruco_markers_stage_layout `
+  --prefix aruco_stage_d105_r30_total15
 ```
 
-인쇄할 때는 프린터 배율을 `실제 크기` 또는 `100%`로 두고, `용지에 맞춤` 옵션은 끄세요. 생성된 `aruco_markers*`와 `markers` 폴더는 `.gitignore`에 포함되어 있으므로 출력물은 Git에 추가하지 않습니다.
+인쇄할 때는 프린터 배율을 `실제 크기` 또는 `100%`로 두고, `용지에 맞춤` 옵션은 끄세요. A4 PDF로 출력한 뒤 원형 외곽선을 따라 잘라 원판 중심과 십자 표시를 맞춰 붙입니다. 생성된 `aruco_markers*`와 `markers` 폴더는 `.gitignore`에 포함되어 있으므로 출력물은 Git에 추가하지 않습니다.
 
-촬영 후에는 White 프레임인 `pattern_000.png`에서 ID 0/1 마커를 검출해 fusion transform을 생성합니다.
+보정은 출력 치수나 부착 치수를 신뢰해서 계산하지 않습니다. 실제 촬영된 `pattern_000.png`에서 마커 코너를 검출하고, `deg_180`의 코너들이 `deg_0` 코너들과 가장 잘 맞도록 RANSAC 기반 homography를 추정합니다. 따라서 프린터 배율, 자름, 부착 위치가 조금 틀어져도 두 촬영 이미지에서 마커가 선명하게 검출되면 그 실제 오차가 transform에 반영됩니다.
+
+촬영 후에는 White 프레임인 `pattern_000.png`에서 ID 0/1/2/3 마커를 검출해 fusion transform을 생성합니다.
 
 ```powershell
 .venv\Scripts\python.exe scripts\estimate_aruco_fusion_transform.py `
   --input captures\scan_xxx\deg_0 `
   --input-180 captures\scan_xxx\deg_180 `
   --output processed\scan_xxx\aruco_fusion_transform.json `
-  --ids 0,1 `
+  --ids 0,1,2,3 `
   --image pattern_000.png
 ```
 
@@ -188,7 +187,7 @@ python scripts/decode_scan.py \
   --input-180 captures\scan_xxx\deg_180 `
   --output processed\scan_xxx\fused `
   --fusion-registration aruco `
-  --aruco-ids 0,1 `
+  --aruco-ids 0,1,2,3 `
   --aruco-image pattern_000.png `
   --aruco-method homography `
   --fusion-mode modulation-weighted

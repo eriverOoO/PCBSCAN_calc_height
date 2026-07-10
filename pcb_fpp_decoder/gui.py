@@ -402,7 +402,7 @@ class DecoderGui:
         self.fusion_registration_var = StringVar(value="rotation-180")
         self.fusion_center_var = StringVar()
         self.fusion_transform_var = StringVar()
-        self.aruco_ids_var = StringVar(value="0,1")
+        self.aruco_ids_var = StringVar(value="0,1,2,3")
         self.aruco_dictionary_var = StringVar(value="DICT_4X4_50")
         self.aruco_method_var = StringVar(value="homography")
         self.registration_image_var = StringVar(value="pattern_000.png")
@@ -738,7 +738,7 @@ class DecoderGui:
 
     def _registration_from_fields(self) -> FusionRegistrationSettings:
         mode = self.fusion_registration_var.get()
-        marker_ids = self._parse_aruco_ids(self.aruco_ids_var.get()) if mode == "aruco" else (0, 1)
+        marker_ids = self._parse_aruco_ids(self.aruco_ids_var.get()) if mode == "aruco" else (0, 1, 2, 3)
         image_name = self.registration_image_var.get().strip() or "pattern_000.png"
         return FusionRegistrationSettings(
             mode=mode,

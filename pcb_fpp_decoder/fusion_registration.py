@@ -35,9 +35,10 @@ def estimate_and_save_fusion_transform(
     *,
     fusion_center: tuple[float, float] | None = None,
     aruco_dictionary: str = "DICT_4X4_50",
-    aruco_ids: Sequence[int] = (0, 1),
+    aruco_ids: Sequence[int] = (0, 1, 2, 3),
     aruco_image: str = "pattern_000.png",
     aruco_method: str = "homography",
+    aruco_ransac_threshold_px: float = 3.0,
     phase_correlation_image: str = "pattern_000.png",
     phase_correlation_use_hann: bool = True,
     phase_correlation_min_response: float = 0.0,
@@ -61,6 +62,7 @@ def estimate_and_save_fusion_transform(
             marker_ids=list(aruco_ids),
             image_name=aruco_image,
             method=aruco_method,
+            ransac_threshold_px=aruco_ransac_threshold_px,
         )
         output_path = fusion_dir / "aruco_fusion_transform.json"
         save_aruco_alignment_json(
@@ -71,6 +73,7 @@ def estimate_and_save_fusion_transform(
             dictionary_name=aruco_dictionary,
             image_name=aruco_image,
             method=aruco_method,
+            ransac_threshold_px=aruco_ransac_threshold_px,
         )
         return _aruco_summary(output_path, result)
 
@@ -100,7 +103,11 @@ def _aruco_summary(
 ) -> EstimatedFusionTransform:
     rotation = result.rotation_source_to_target_deg
     deviation = result.deviation_from_180_deg
-    details = f"rmse={result.reprojection_rmse_px:.3f} px"
+    details = (
+        f"rmse={result.reprojection_rmse_px:.3f} px, "
+        f"inlier_rmse={result.inlier_reprojection_rmse_px:.3f} px, "
+        f"inliers={result.inlier_count}/{result.point_count}"
+    )
     if rotation is not None and deviation is not None:
         details += f", rotation={rotation:.4f} deg, |deviation from 180|={deviation:.4f} deg"
     return EstimatedFusionTransform(

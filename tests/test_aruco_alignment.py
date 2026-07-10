@@ -9,13 +9,14 @@ from pcb_fpp_decoder.aruco_marker import generate_marker_image
 from pcb_fpp_decoder.fusion_registration import estimate_and_save_fusion_transform
 
 
-def test_estimate_aruco_transform_from_white_pattern(tmp_path):
-    cv2 = pytest.importorskip("cv2")
-    if not hasattr(cv2, "aruco"):
-        pytest.skip("OpenCV ArUco module is not available")
-
-    target = Image.new("L", (600, 600), 255)
-    for marker_id, xy in ((0, (110, 110)), (1, (390, 390))):
+def _target_with_four_markers() -> Image.Image:
+    target = Image.new("L", (700, 700), 255)
+    for marker_id, xy in (
+        (0, (315, 100)),
+        (1, (530, 315)),
+        (2, (315, 530)),
+        (3, (100, 315)),
+    ):
         marker, _marker_pixels, _quiet_pixels = generate_marker_image(
             marker_id,
             "DICT_4X4_50",
@@ -25,13 +26,22 @@ def test_estimate_aruco_transform_from_white_pattern(tmp_path):
             label=False,
         )
         target.paste(marker, xy)
+    return target
+
+
+def test_estimate_aruco_transform_from_white_pattern(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    if not hasattr(cv2, "aruco"):
+        pytest.skip("OpenCV ArUco module is not available")
+
+    target = _target_with_four_markers()
 
     target_array = np.asarray(target)
-    target_to_source = cv2.getRotationMatrix2D((300.0, 300.0), 178.7, 1.0)
+    target_to_source = cv2.getRotationMatrix2D((350.0, 350.0), 178.7, 1.0)
     source_array = cv2.warpAffine(
         target_array,
         target_to_source,
-        (600, 600),
+        (700, 700),
         flags=cv2.INTER_NEAREST,
         borderValue=255,
     )
@@ -47,12 +57,14 @@ def test_estimate_aruco_transform_from_white_pattern(tmp_path):
         input_dir,
         input_180_dir,
         dictionary_name="DICT_4X4_50",
-        marker_ids=[0, 1],
+        marker_ids=[0, 1, 2, 3],
         method="homography",
     )
 
     assert result.transform_kind == "homography"
-    assert result.marker_ids == [0, 1]
+    assert result.marker_ids == [0, 1, 2, 3]
+    assert result.inlier_count == result.point_count
+    assert result.point_count == 16
     assert result.reprojection_rmse_px < 0.5
     assert result.deviation_from_180_deg == pytest.approx(1.3, abs=0.3)
 
@@ -62,24 +74,14 @@ def test_auto_fusion_registration_saves_aruco_transform(tmp_path):
     if not hasattr(cv2, "aruco"):
         pytest.skip("OpenCV ArUco module is not available")
 
-    target = Image.new("L", (600, 600), 255)
-    for marker_id, xy in ((0, (110, 110)), (1, (390, 390))):
-        marker, _marker_pixels, _quiet_pixels = generate_marker_image(
-            marker_id,
-            "DICT_4X4_50",
-            marker_size_mm=8.0,
-            quiet_zone_mm=2.0,
-            dpi=254,
-            label=False,
-        )
-        target.paste(marker, xy)
+    target = _target_with_four_markers()
 
     target_array = np.asarray(target)
-    target_to_source = cv2.getRotationMatrix2D((300.0, 300.0), 179.2, 1.0)
+    target_to_source = cv2.getRotationMatrix2D((350.0, 350.0), 179.2, 1.0)
     source_array = cv2.warpAffine(
         target_array,
         target_to_source,
-        (600, 600),
+        (700, 700),
         flags=cv2.INTER_NEAREST,
         borderValue=255,
     )
@@ -98,7 +100,7 @@ def test_auto_fusion_registration_saves_aruco_transform(tmp_path):
         input_180_dir,
         output_dir,
         aruco_dictionary="DICT_4X4_50",
-        aruco_ids=(0, 1),
+        aruco_ids=(0, 1, 2, 3),
         aruco_method="homography",
     )
 

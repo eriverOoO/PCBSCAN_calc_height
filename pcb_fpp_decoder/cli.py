@@ -165,7 +165,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--aruco-ids",
-        default="0,1",
+        default="0,1,2,3",
         help="Comma-separated ArUco marker IDs for --fusion-registration aruco",
     )
     parser.add_argument(
@@ -178,6 +178,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("homography", "affine"),
         default="homography",
         help="Transform model for ArUco marker registration",
+    )
+    parser.add_argument(
+        "--aruco-ransac-threshold-px",
+        type=float,
+        default=3.0,
+        help="RANSAC reprojection threshold in pixels for ArUco registration",
     )
     parser.add_argument(
         "--analysis-roi",
@@ -379,6 +385,7 @@ def _prepare_fusion_registration(
         aruco_ids=marker_ids,
         aruco_image=args.aruco_image,
         aruco_method=args.aruco_method,
+        aruco_ransac_threshold_px=args.aruco_ransac_threshold_px,
         phase_correlation_image=args.phase_correlation_image,
         phase_correlation_min_response=args.phase_correlation_min_response,
     )

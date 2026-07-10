@@ -43,6 +43,10 @@ class AlignmentResult:
     matrix: list[list[float]]
     transform_kind: str
     reprojection_rmse_px: float
+    inlier_reprojection_rmse_px: float
+    max_reprojection_error_px: float
+    point_count: int
+    inlier_count: int
     marker_ids: list[int]
     rotation_source_to_target_deg: float | None
     deviation_from_180_deg: float | None
@@ -78,8 +82,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--ids",
-        default="0,1",
-        help="Marker IDs to use, for example 0,1",
+        default="0,1,2,3",
+        help="Marker IDs to use, for example 0,1,2,3",
     )
     parser.add_argument(
         "--image",
@@ -91,6 +95,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("homography", "affine"),
         default="homography",
         help="Transform model to estimate from marker corners",
+    )
+    parser.add_argument(
+        "--ransac-threshold-px",
+        type=float,
+        default=3.0,
+        help="RANSAC reprojection threshold in pixels for robust marker fitting",
     )
     return parser
 
@@ -110,8 +120,9 @@ def estimate_aruco_transform(
     marker_ids: list[int] | None = None,
     image_name: str = "pattern_000.png",
     method: str = "homography",
+    ransac_threshold_px: float = 3.0,
 ) -> AlignmentResult:
-    marker_ids = marker_ids or [0, 1]
+    marker_ids = marker_ids or [0, 1, 2, 3]
     target_image = _load_detection_image(input_dir / image_name)
     source_image = _load_detection_image(input_180_dir / image_name)
     target_markers = _detect_markers(target_image, dictionary_name)
@@ -138,17 +149,34 @@ def estimate_aruco_transform(
 
     cv2 = _load_cv2()
     if method == "homography":
-        matrix, inliers = cv2.findHomography(src, dst, method=0)
+        matrix, inliers = cv2.findHomography(
+            src,
+            dst,
+            method=cv2.RANSAC,
+            ransacReprojThreshold=float(ransac_threshold_px),
+        )
         if matrix is None:
             raise ValueError("Could not estimate homography from detected markers")
         transform_kind = "homography"
     else:
-        matrix, inliers = cv2.estimateAffinePartial2D(src, dst, method=cv2.LMEDS)
+        matrix, inliers = cv2.estimateAffinePartial2D(
+            src,
+            dst,
+            method=cv2.RANSAC,
+            ransacReprojThreshold=float(ransac_threshold_px),
+        )
         if matrix is None:
             raise ValueError("Could not estimate affine transform from detected markers")
         transform_kind = "affine"
 
-    rmse = _reprojection_rmse(src, dst, matrix, transform_kind)
+    inlier_mask = _normalize_inlier_mask(inliers, point_count=src.shape[0])
+    rmse, inlier_rmse, max_error = _reprojection_stats(
+        src,
+        dst,
+        matrix,
+        transform_kind,
+        inlier_mask,
+    )
     rotation_deg = _center_vector_rotation_deg(source_by_id, target_by_id, marker_ids)
     deviation_deg = None
     if rotation_deg is not None:
@@ -158,6 +186,10 @@ def estimate_aruco_transform(
         matrix=np.asarray(matrix, dtype=float).tolist(),
         transform_kind=transform_kind,
         reprojection_rmse_px=rmse,
+        inlier_reprojection_rmse_px=inlier_rmse,
+        max_reprojection_error_px=max_error,
+        point_count=int(src.shape[0]),
+        inlier_count=int(np.count_nonzero(inlier_mask)),
         marker_ids=marker_ids,
         rotation_source_to_target_deg=rotation_deg,
         deviation_from_180_deg=deviation_deg,
@@ -175,6 +207,7 @@ def save_alignment_json(
     dictionary_name: str,
     image_name: str,
     method: str,
+    ransac_threshold_px: float | None = None,
 ) -> None:
     key = "homography" if result.transform_kind == "homography" else "affine"
     payload: dict[str, Any] = {
@@ -195,7 +228,12 @@ def save_alignment_json(
             "dictionary": dictionary_name,
             "marker_ids": result.marker_ids,
             "method": method,
+            "ransac_threshold_px": ransac_threshold_px,
             "reprojection_rmse_px": result.reprojection_rmse_px,
+            "inlier_reprojection_rmse_px": result.inlier_reprojection_rmse_px,
+            "max_reprojection_error_px": result.max_reprojection_error_px,
+            "point_count": result.point_count,
+            "inlier_count": result.inlier_count,
             "rotation_source_to_target_deg": result.rotation_source_to_target_deg,
             "deviation_from_180_deg": result.deviation_from_180_deg,
             "target_markers": [asdict(marker) for marker in result.target_markers],
@@ -275,21 +313,46 @@ def _detect_markers(image: np.ndarray, dictionary_name: str) -> list[DetectedMar
     return sorted(markers, key=lambda marker: marker.marker_id)
 
 
-def _reprojection_rmse(
+def _project_points(
+    src: np.ndarray,
+    matrix: np.ndarray,
+    transform_kind: str,
+) -> np.ndarray:
+    if transform_kind == "homography":
+        ones = np.ones((src.shape[0], 1), dtype=np.float32)
+        homogeneous = np.concatenate([src, ones], axis=1) @ matrix.T
+        return homogeneous[:, :2] / homogeneous[:, 2:3]
+    ones = np.ones((src.shape[0], 1), dtype=np.float32)
+    return np.concatenate([src, ones], axis=1) @ matrix.T
+
+
+def _reprojection_stats(
     src: np.ndarray,
     dst: np.ndarray,
     matrix: np.ndarray,
     transform_kind: str,
-) -> float:
-    if transform_kind == "homography":
-        ones = np.ones((src.shape[0], 1), dtype=np.float32)
-        homogeneous = np.concatenate([src, ones], axis=1) @ matrix.T
-        projected = homogeneous[:, :2] / homogeneous[:, 2:3]
-    else:
-        ones = np.ones((src.shape[0], 1), dtype=np.float32)
-        projected = np.concatenate([src, ones], axis=1) @ matrix.T
+    inlier_mask: np.ndarray,
+) -> tuple[float, float, float]:
+    projected = _project_points(src, matrix, transform_kind)
     error = projected.astype(np.float32) - dst.astype(np.float32)
-    return float(np.sqrt(np.mean(np.sum(error * error, axis=1))))
+    distances = np.sqrt(np.sum(error * error, axis=1))
+    rmse = float(np.sqrt(np.mean(distances * distances)))
+    max_error = float(np.max(distances))
+    if np.any(inlier_mask):
+        inlier_distances = distances[inlier_mask]
+        inlier_rmse = float(np.sqrt(np.mean(inlier_distances * inlier_distances)))
+    else:
+        inlier_rmse = rmse
+    return rmse, inlier_rmse, max_error
+
+
+def _normalize_inlier_mask(inliers: np.ndarray | None, *, point_count: int) -> np.ndarray:
+    if inliers is None:
+        return np.ones(point_count, dtype=bool)
+    mask = np.asarray(inliers).reshape(-1).astype(bool)
+    if mask.shape[0] != point_count:
+        return np.ones(point_count, dtype=bool)
+    return mask
 
 
 def _center_vector_rotation_deg(
@@ -327,6 +390,7 @@ def main(argv: list[str] | None = None) -> int:
             marker_ids=marker_ids,
             image_name=args.image,
             method=args.method,
+            ransac_threshold_px=args.ransac_threshold_px,
         )
         save_alignment_json(
             args.output,
@@ -336,13 +400,19 @@ def main(argv: list[str] | None = None) -> int:
             dictionary_name=args.dictionary,
             image_name=args.image,
             method=args.method,
+            ransac_threshold_px=args.ransac_threshold_px,
         )
     except (RuntimeError, ValueError, FileNotFoundError) as exc:
         parser.error(str(exc))
 
     print(f"Saved fusion transform: {args.output}")
     print(f"Transform kind: {result.transform_kind}")
-    print(f"Reprojection RMSE: {result.reprojection_rmse_px:.3f} px")
+    print(
+        "Reprojection RMSE: "
+        f"{result.reprojection_rmse_px:.3f} px "
+        f"(inlier {result.inlier_reprojection_rmse_px:.3f} px, "
+        f"{result.inlier_count}/{result.point_count} inliers)"
+    )
     if result.rotation_source_to_target_deg is not None:
         print(f"Source->target rotation: {result.rotation_source_to_target_deg:.4f} deg")
         print(f"Deviation from 180 deg: {result.deviation_from_180_deg:.4f} deg")

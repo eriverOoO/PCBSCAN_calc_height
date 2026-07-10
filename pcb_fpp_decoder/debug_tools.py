@@ -31,7 +31,7 @@ class DebugStep:
 @dataclass(frozen=True)
 class FusionDebugSettings:
     registration: str = "rotation-180"
-    aruco_ids: tuple[int, ...] = (0, 1)
+    aruco_ids: tuple[int, ...] = (0, 1, 2, 3)
     aruco_dictionary: str = "DICT_4X4_50"
     aruco_method: str = "homography"
     registration_image: str = "pattern_000.png"

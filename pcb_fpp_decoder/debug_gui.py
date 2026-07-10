@@ -65,7 +65,7 @@ class DebuggerGui:
         self.fusion_mode_var = StringVar(value="modulation-weighted")
         self.registration_var = StringVar(value="rotation-180")
         self.registration_image_var = StringVar(value="pattern_000.png")
-        self.aruco_ids_var = StringVar(value="0,1")
+        self.aruco_ids_var = StringVar(value="0,1,2,3")
         self.aruco_dictionary_var = StringVar(value="DICT_4X4_50")
         self.aruco_method_var = StringVar(value="homography")
         self.crosstalk_matrix_var = StringVar()
