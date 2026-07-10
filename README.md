@@ -138,6 +138,8 @@ python scripts/decode_scan.py \
 
 로테이션 스테이지가 정확히 180.00도 회전하지 않는 경우에는 PCB에 붙인 ArUco 마커를 이용해 `deg_180` 영상을 `deg_0` 좌표계로 보정할 수 있습니다. 마커 이미지는 저장소에 포함하지 않고, 필요할 때 다음 명령으로 다시 생성합니다.
 
+현재 기본 실행값은 스테이지 ArUco 마커를 사용하는 쪽입니다. 0/180 통합에서는 `--fusion-registration aruco`가 기본이고, 단일 디코딩에서도 `--analysis-roi aruco`, `--analysis-aruco-layout stage-cross`, 마커 반경 `30 mm`, 스테이지 지름 `105 mm`, PCB `30 x 30 mm`가 기본입니다. 마커가 없는 과거 촬영 데이터를 처리할 때만 `--analysis-roi none` 또는 `--fusion-registration rotation-180`을 명시하세요.
+
 스테이지 원판 전체에 붙일 때는 실제 스테이지에 맞는 레이아웃을 생성해 사용합니다. 아래 명령은 지름 105 mm 원판 안에 ID 0, 1, 2, 3 마커를 위/오른쪽/아래/왼쪽 순서로 배치합니다. 각 마커 중심은 원판 중심에서 30 mm 떨어지고, 흰 여백 포함 전체 마커 크기는 약 15 mm입니다.
 
 ```powershell

@@ -33,7 +33,6 @@ from .debug_tools import (
     generate_single_image_pattern_debug,
 )
 from .decoder import DecodeConfig
-from .fusion_registration import FUSION_REGISTRATION_CHOICES
 from .io import COLOR_INPUT_MODES, parse_crosstalk_matrix
 
 
@@ -63,7 +62,9 @@ class DebuggerGui:
         self.median_filter_var = StringVar(value="3")
         self.height_mode_var = StringVar(value="relative")
         self.fusion_mode_var = StringVar(value="modulation-weighted")
-        self.registration_var = StringVar(value="rotation-180")
+        self.registration_rotation_var = IntVar(value=0)
+        self.registration_aruco_var = IntVar(value=1)
+        self.registration_phase_var = IntVar(value=0)
         self.registration_image_var = StringVar(value="pattern_000.png")
         self.aruco_ids_var = StringVar(value="0,1,2,3")
         self.aruco_dictionary_var = StringVar(value="DICT_4X4_50")
@@ -132,7 +133,7 @@ class DebuggerGui:
         self._file_row(height, "Reference phase", self.reference_phase_var, self._choose_reference_phase)
         self._file_row(height, "Calibration", self.calibration_var, self._choose_calibration)
         self._option_row(height, "Fusion mode", self.fusion_mode_var, ("modulation-weighted", "average"))
-        self._option_row(height, "Registration", self.registration_var, FUSION_REGISTRATION_CHOICES)
+        self._registration_check_row(height)
         self._entry_row(height, "Reg image", self.registration_image_var)
         self._entry_row(height, "ArUco IDs", self.aruco_ids_var)
         self._option_row(
@@ -192,6 +193,20 @@ class DebuggerGui:
         Label(row, text=label, width=15, anchor="w").pack(side=LEFT)
         combo = ttk.Combobox(row, textvariable=var, values=values, state="readonly", width=24)
         combo.pack(side=LEFT, fill="x", expand=True)
+
+    def _registration_check_row(self, parent: Frame) -> None:
+        row = Frame(parent)
+        row.pack(fill="x", pady=3)
+        Label(row, text="Registration", width=15, anchor="w").pack(side=LEFT)
+        Checkbutton(row, text="180", variable=self.registration_rotation_var).pack(side=LEFT)
+        Checkbutton(row, text="ArUco", variable=self.registration_aruco_var).pack(
+            side=LEFT,
+            padx=(8, 0),
+        )
+        Checkbutton(row, text="Phase corr", variable=self.registration_phase_var).pack(
+            side=LEFT,
+            padx=(8, 0),
+        )
 
     def _action_row(self, parent: Frame) -> None:
         row = Frame(parent)
@@ -341,8 +356,18 @@ class DebuggerGui:
         )
 
     def _fusion_settings_from_fields(self) -> FusionDebugSettings:
+        selected = [
+            ("rotation-180", bool(self.registration_rotation_var.get())),
+            ("aruco", bool(self.registration_aruco_var.get())),
+            ("phase-correlation", bool(self.registration_phase_var.get())),
+        ]
+        enabled = [mode for mode, is_enabled in selected if is_enabled]
+        if not enabled:
+            raise ValueError("Select one 180 registration method")
+        if len(enabled) > 1:
+            raise ValueError("Select only one automatic 180 registration method")
         return FusionDebugSettings(
-            registration=self.registration_var.get(),
+            registration=enabled[0],
             aruco_ids=self._parse_aruco_ids(self.aruco_ids_var.get()),
             aruco_dictionary=self.aruco_dictionary_var.get(),
             aruco_method=self.aruco_method_var.get(),

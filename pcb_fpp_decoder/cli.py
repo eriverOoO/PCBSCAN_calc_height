@@ -279,20 +279,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 def config_from_args(args: argparse.Namespace) -> DecodeConfig:
     analysis_roi_mode = args.analysis_roi
-    analysis_options_given = any(
-        value is not None
-        for value in (
-            args.analysis_workspace_width_mm,
-            args.analysis_workspace_height_mm,
-            args.analysis_marker_center_radius_mm,
-            args.analysis_stage_diameter_mm,
-            args.pcb_width_mm,
-            args.pcb_height_mm,
-            args.pcb_margin_mm if args.pcb_margin_mm else None,
-        )
-    )
-    if analysis_roi_mode == "none" and analysis_options_given:
-        analysis_roi_mode = "aruco"
 
     return DecodeConfig(
         projector_width=args.projector_width,

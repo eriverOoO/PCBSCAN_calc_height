@@ -6,7 +6,7 @@ import pytest
 from PIL import Image
 
 from pcb_fpp_decoder.aruco_marker import generate_marker_image
-from pcb_fpp_decoder.cli import main as cli_main
+from pcb_fpp_decoder.cli import build_parser, config_from_args, main as cli_main
 from pcb_fpp_decoder.decoder import DecodeConfig, PcbFppDecoder
 from pcb_fpp_decoder.io import rgb_to_intensity
 
@@ -297,6 +297,8 @@ def test_cli_resolves_pro4500_phone_scan_root_angle_folder(tmp_path):
             str(output_dir),
             "--median-filter",
             "0",
+            "--analysis-roi",
+            "none",
         ]
     )
 
@@ -304,6 +306,27 @@ def test_cli_resolves_pro4500_phone_scan_root_angle_folder(tmp_path):
     assert (output_dir / "decode_report.json").exists()
     report = json.loads((output_dir / "decode_report.json").read_text(encoding="utf-8"))
     assert report["input_dir"].endswith("angle_000")
+
+
+def test_cli_defaults_use_stage_aruco_settings(tmp_path):
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "--input",
+            str(tmp_path / "captures" / "scan_001" / "deg_0"),
+            "--output",
+            str(tmp_path / "processed" / "scan_001"),
+        ]
+    )
+    config = config_from_args(args)
+
+    assert args.fusion_registration == "aruco"
+    assert config.analysis_roi_mode == "aruco"
+    assert config.analysis_aruco_layout == "stage-cross"
+    assert config.analysis_marker_center_radius_mm == 30.0
+    assert config.analysis_stage_diameter_mm == 105.0
+    assert config.pcb_width_mm == 30.0
+    assert config.pcb_height_mm == 30.0
 
 
 def test_phone_capture_metadata_is_reported(tmp_path):

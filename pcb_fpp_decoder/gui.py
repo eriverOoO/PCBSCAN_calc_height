@@ -27,10 +27,7 @@ from tkinter import (
 )
 
 from .decoder import DecodeConfig, PcbFppDecoder
-from .fusion_registration import (
-    FUSION_REGISTRATION_CHOICES,
-    estimate_and_save_fusion_transform,
-)
+from .fusion_registration import estimate_and_save_fusion_transform
 from .io import COLOR_INPUT_MODES, parse_crosstalk_matrix
 
 
@@ -168,6 +165,13 @@ def _parse_int(label: str, text: str) -> int:
         return int(text)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{label}에는 정수를 입력해 주세요.") from exc
+
+
+def _parse_optional_float(label: str, text: str) -> float | None:
+    text = text.strip()
+    if not text:
+        return None
+    return _parse_float(label, text)
 
 
 def _parse_crosstalk_matrix(text: str):
@@ -399,17 +403,23 @@ class DecoderGui:
         self.calibration_config_var = StringVar()
         self.height_sign_var = StringVar(value="1")
         self.fusion_mode_var = StringVar(value="modulation-weighted")
-        self.fusion_registration_var = StringVar(value="rotation-180")
         self.fusion_center_var = StringVar()
         self.fusion_transform_var = StringVar()
+        self.registration_rotation_var = IntVar(value=0)
+        self.registration_aruco_var = IntVar(value=1)
+        self.registration_phase_var = IntVar(value=0)
+        self.registration_transform_var = IntVar(value=0)
         self.aruco_ids_var = StringVar(value="0,1,2,3")
         self.aruco_dictionary_var = StringVar(value="DICT_4X4_50")
         self.aruco_method_var = StringVar(value="homography")
         self.registration_image_var = StringVar(value="pattern_000.png")
-        self.analysis_roi_var = StringVar(value="none")
+        self.analysis_roi_var = StringVar(value="aruco")
         self.analysis_aruco_ids_var = StringVar(value="0,1,2,3")
+        self.analysis_aruco_layout_var = StringVar(value="stage-cross")
         self.analysis_workspace_size_var = StringVar()
-        self.pcb_size_var = StringVar()
+        self.analysis_marker_radius_var = StringVar(value="30")
+        self.analysis_stage_diameter_var = StringVar(value="105")
+        self.pcb_size_var = StringVar(value="30,30")
         self.pcb_margin_var = StringVar(value="0")
         self.max_points_var = StringVar(value="300000")
         self.detrend_var = IntVar(value=1)
@@ -466,12 +476,7 @@ class DecoderGui:
             self.fusion_mode_var,
             ("modulation-weighted", "average"),
         )
-        self._option_row(
-            height,
-            "합성 정합",
-            self.fusion_registration_var,
-            FUSION_REGISTRATION_CHOICES,
-        )
+        self._registration_check_row(height)
         self._entry_row(height, "합성 중심 x,y", self.fusion_center_var)
         self._file_row(
             height,
@@ -482,7 +487,15 @@ class DecoderGui:
         self._entry_row(height, "ArUco ID", self.aruco_ids_var)
         self._option_row(height, "Analysis ROI", self.analysis_roi_var, ("none", "aruco"))
         self._entry_row(height, "ROI ArUco IDs", self.analysis_aruco_ids_var)
+        self._option_row(
+            height,
+            "ROI 레이아웃",
+            self.analysis_aruco_layout_var,
+            ("stage-cross", "corners"),
+        )
         self._entry_row(height, "Workspace W,H mm", self.analysis_workspace_size_var)
+        self._entry_row(height, "마커 반경 mm", self.analysis_marker_radius_var)
+        self._entry_row(height, "스테이지 지름 mm", self.analysis_stage_diameter_var)
         self._entry_row(height, "PCB W,H mm", self.pcb_size_var)
         self._entry_row(height, "PCB margin mm", self.pcb_margin_var)
         self._option_row(
@@ -592,6 +605,24 @@ class DecoderGui:
 
         OptionMenu(row, display_var, *display_values, command=select).pack(side=LEFT)
 
+    def _registration_check_row(self, parent: Frame) -> None:
+        row = Frame(parent)
+        row.pack(fill="x", pady=4)
+        Label(row, text="180 정합", width=18, anchor="w").pack(side=LEFT)
+        Checkbutton(row, text="180도 기본", variable=self.registration_rotation_var).pack(side=LEFT)
+        Checkbutton(row, text="ArUco", variable=self.registration_aruco_var).pack(
+            side=LEFT,
+            padx=(8, 0),
+        )
+        Checkbutton(row, text="위상 상관", variable=self.registration_phase_var).pack(
+            side=LEFT,
+            padx=(8, 0),
+        )
+        Checkbutton(row, text="변환 파일", variable=self.registration_transform_var).pack(
+            side=LEFT,
+            padx=(8, 0),
+        )
+
     def _choose_input(self) -> None:
         folder = filedialog.askdirectory(title="스캔 폴더 선택")
         if folder:
@@ -688,9 +719,16 @@ class DecoderGui:
         )
         pcb_size = self._parse_size_pair("PCB W,H mm", self.pcb_size_var.get())
         analysis_roi_mode = self.analysis_roi_var.get()
-        if analysis_roi_mode == "none" and (workspace_size is not None or pcb_size is not None):
-            analysis_roi_mode = "aruco"
         pcb_margin_mm = _parse_float("PCB margin mm", self.pcb_margin_var.get() or "0")
+        analysis_layout = self.analysis_aruco_layout_var.get()
+        marker_radius_mm = _parse_optional_float(
+            "마커 반경 mm",
+            self.analysis_marker_radius_var.get(),
+        )
+        stage_diameter_mm = _parse_optional_float(
+            "스테이지 지름 mm",
+            self.analysis_stage_diameter_var.get(),
+        )
 
         if height_mode != "relative" and reference_scan is None and reference_phase is None:
             raise ValueError(
@@ -728,8 +766,11 @@ class DecoderGui:
             analysis_aruco_dictionary=self.aruco_dictionary_var.get(),
             analysis_aruco_ids=self._parse_aruco_ids(self.analysis_aruco_ids_var.get()),
             analysis_aruco_image=self.registration_image_var.get().strip() or "pattern_000.png",
+            analysis_aruco_layout=analysis_layout,
             analysis_workspace_width_mm=workspace_size[0] if workspace_size else None,
             analysis_workspace_height_mm=workspace_size[1] if workspace_size else None,
+            analysis_marker_center_radius_mm=marker_radius_mm,
+            analysis_stage_diameter_mm=stage_diameter_mm,
             pcb_width_mm=pcb_size[0] if pcb_size else None,
             pcb_height_mm=pcb_size[1] if pcb_size else None,
             pcb_margin_mm=pcb_margin_mm,
@@ -737,7 +778,22 @@ class DecoderGui:
         )
 
     def _registration_from_fields(self) -> FusionRegistrationSettings:
-        mode = self.fusion_registration_var.get()
+        if self.registration_transform_var.get():
+            if not self.fusion_transform_var.get().strip():
+                raise ValueError("변환 파일 정합을 사용하려면 합성 변환 파일을 선택해 주세요.")
+            mode = "rotation-180"
+        else:
+            selected = [
+                ("rotation-180", bool(self.registration_rotation_var.get())),
+                ("aruco", bool(self.registration_aruco_var.get())),
+                ("phase-correlation", bool(self.registration_phase_var.get())),
+            ]
+            enabled = [mode for mode, is_enabled in selected if is_enabled]
+            if not enabled:
+                raise ValueError("180 정합 방식은 하나 이상 선택해 주세요.")
+            if len(enabled) > 1:
+                raise ValueError("자동 180 정합 방식은 하나만 선택해 주세요.")
+            mode = enabled[0]
         marker_ids = self._parse_aruco_ids(self.aruco_ids_var.get()) if mode == "aruco" else (0, 1, 2, 3)
         image_name = self.registration_image_var.get().strip() or "pattern_000.png"
         return FusionRegistrationSettings(
