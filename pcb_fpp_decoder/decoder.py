@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import shutil
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -61,6 +62,8 @@ PATTERN_LABELS = {
     21: "gray7_inv",
 }
 
+OUTPUT_PROFILES = ("compact", "full")
+
 
 @dataclass
 class DecodeConfig:
@@ -102,6 +105,7 @@ class DecodeConfig:
     pcb_width_mm: float | None = None
     pcb_height_mm: float | None = None
     pcb_margin_mm: float = 0.0
+    output_profile: str = "full"
     save_debug: bool = False
     epsilon: float = 1e-6
     max_point_cloud_points: int = 300_000
@@ -192,6 +196,8 @@ class FusionResult:
 
 class PcbFppDecoder:
     def __init__(self, config: DecodeConfig):
+        if config.output_profile not in OUTPUT_PROFILES:
+            raise ValueError("output_profile must be compact or full")
         self.config = config
 
     def load_scan(self, input_dir: Path) -> PatternSet:
@@ -626,28 +632,29 @@ class PcbFppDecoder:
 
     def save_outputs(self, result: DecodeResult, output_dir: Path) -> None:
         output_dir = Path(output_dir).expanduser().resolve()
+        full_outputs = self.config.output_profile == "full"
+        if not full_outputs:
+            _prune_compact_decode_output(output_dir)
+
         corrected_dir = output_dir / "corrected"
         masks_dir = output_dir / "masks"
         phase_dir = output_dir / "phase"
         gray_dir = output_dir / "gray"
         height_dir = output_dir / "height"
         point_dir = output_dir / "point_cloud"
-        for directory in (
-            corrected_dir,
-            masks_dir,
-            phase_dir,
-            gray_dir,
-            height_dir,
-            point_dir,
-        ):
+        directories = [masks_dir, phase_dir, gray_dir, height_dir]
+        if full_outputs:
+            directories.extend([corrected_dir, point_dir])
+        for directory in directories:
             directory.mkdir(parents=True, exist_ok=True)
 
-        for pattern_id in sorted(result.patterns.images):
-            label = PATTERN_LABELS.get(pattern_id, f"pattern_{pattern_id:03d}")
-            save_float01_png(
-                corrected_dir / f"corrected_{pattern_id:02d}_{label}.png",
-                result.correction.corrected[pattern_id],
-            )
+        if full_outputs:
+            for pattern_id in sorted(result.patterns.images):
+                label = PATTERN_LABELS.get(pattern_id, f"pattern_{pattern_id:03d}")
+                save_float01_png(
+                    corrected_dir / f"corrected_{pattern_id:02d}_{label}.png",
+                    result.correction.corrected[pattern_id],
+                )
 
         save_mask(masks_dir / "valid_mask.png", result.correction.valid_mask)
         save_mask(masks_dir / "modulation_mask.png", result.phase.modulation_mask)
@@ -656,38 +663,44 @@ class PcbFppDecoder:
         if result.analysis_roi is not None:
             save_mask(masks_dir / "analysis_roi_mask.png", result.analysis_roi.mask)
             save_mask(masks_dir / "marker_space_mask.png", result.analysis_roi.marker_space_mask)
-            np.save(masks_dir / "analysis_roi_mask.npy", result.analysis_roi.mask)
-            np.save(masks_dir / "marker_space_mask.npy", result.analysis_roi.marker_space_mask)
+            if full_outputs:
+                np.save(masks_dir / "analysis_roi_mask.npy", result.analysis_roi.mask)
+                np.save(masks_dir / "marker_space_mask.npy", result.analysis_roi.marker_space_mask)
             if result.analysis_roi.pcb_mask is not None:
                 save_mask(masks_dir / "pcb_analysis_mask.png", result.analysis_roi.pcb_mask)
-                np.save(masks_dir / "pcb_analysis_mask.npy", result.analysis_roi.pcb_mask)
+                if full_outputs:
+                    np.save(masks_dir / "pcb_analysis_mask.npy", result.analysis_roi.pcb_mask)
 
-        np.save(phase_dir / "wrapped_phase.npy", result.phase.wrapped_phase)
+        if full_outputs:
+            np.save(phase_dir / "wrapped_phase.npy", result.phase.wrapped_phase)
         save_wrapped_phase_preview(
             phase_dir / "wrapped_phase_preview.png",
             result.phase.wrapped_phase,
             result.absolute.combined_mask,
         )
         np.save(phase_dir / "absolute_phase.npy", result.absolute.absolute_phase)
-        np.save(phase_dir / "absolute_phase_raw.npy", result.absolute.absolute_phase_raw)
+        if full_outputs:
+            np.save(phase_dir / "absolute_phase_raw.npy", result.absolute.absolute_phase_raw)
         save_colormap(
             phase_dir / "absolute_phase_preview.png",
             result.absolute.absolute_phase,
             result.absolute.combined_mask,
             cmap="viridis",
         )
-        save_colormap(
-            phase_dir / "absolute_phase_before_correction_preview.png",
-            result.absolute.absolute_phase_raw,
-            result.absolute.combined_mask,
-            cmap="viridis",
-        )
+        if full_outputs:
+            save_colormap(
+                phase_dir / "absolute_phase_before_correction_preview.png",
+                result.absolute.absolute_phase_raw,
+                result.absolute.combined_mask,
+                cmap="viridis",
+            )
         save_mask(phase_dir / "boundary_correction_mask.png", result.absolute.correction_mask)
 
-        np.save(gray_dir / "gray_bits.npy", result.gray.gray_bits)
-        np.save(gray_dir / "gray_code_value.npy", result.gray.gray_code_value)
-        np.save(gray_dir / "stripe_order_k.npy", result.gray.stripe_order_k)
-        np.save(gray_dir / "gray_confidence.npy", result.gray.confidence)
+        if full_outputs:
+            np.save(gray_dir / "gray_bits.npy", result.gray.gray_bits)
+            np.save(gray_dir / "gray_code_value.npy", result.gray.gray_code_value)
+            np.save(gray_dir / "stripe_order_k.npy", result.gray.stripe_order_k)
+            np.save(gray_dir / "gray_confidence.npy", result.gray.confidence)
         save_mask(gray_dir / "gray_valid_mask.png", result.gray.valid_mask)
         save_preview_gray(
             gray_dir / "gray_confidence_preview.png",
@@ -701,9 +714,7 @@ class PcbFppDecoder:
         )
 
         np.save(height_dir / result.height.filename, result.height.height)
-        if result.height.metric:
-            np.save(height_dir / "height.npy", result.height.height)
-        else:
+        if full_outputs and result.height.filename != "height.npy":
             np.save(height_dir / "height.npy", result.height.height)
         if result.height.delta_phase is not None:
             np.save(height_dir / "delta_phase.npy", result.height.delta_phase)
@@ -721,14 +732,15 @@ class PcbFppDecoder:
             with_colorbar=True,
             title="Height / relative phase",
         )
-        save_colormap(
-            height_dir / "height_heatmap_colorbar.png",
-            result.height.height,
-            result.height.mask,
-            cmap="turbo",
-            with_colorbar=True,
-            title="Height / relative phase",
-        )
+        if full_outputs:
+            save_colormap(
+                height_dir / "height_heatmap_colorbar.png",
+                result.height.height,
+                result.height.mask,
+                cmap="turbo",
+                with_colorbar=True,
+                title="Height / relative phase",
+            )
         save_colormap(
             height_dir / "height_relative_preview.png",
             result.height.height,
@@ -736,36 +748,53 @@ class PcbFppDecoder:
             cmap="turbo",
         )
 
-        ply_count = write_ascii_ply(
-            point_dir / "point_cloud.ply",
-            result.height.height,
-            result.height.mask,
-            max_points=self.config.max_point_cloud_points,
-        )
-        save_point_cloud_preview(
-            point_dir / "point_cloud_preview.png",
-            result.height.height,
-            result.height.mask,
-        )
-        result.report["point_cloud"] = {
-            "ply_vertices_written": ply_count,
-            "max_point_cloud_points": self.config.max_point_cloud_points,
-        }
+        if full_outputs:
+            ply_count = write_ascii_ply(
+                point_dir / "point_cloud.ply",
+                result.height.height,
+                result.height.mask,
+                max_points=self.config.max_point_cloud_points,
+            )
+            save_point_cloud_preview(
+                point_dir / "point_cloud_preview.png",
+                result.height.height,
+                result.height.mask,
+            )
+            result.report["point_cloud"] = {
+                "enabled": True,
+                "ply_vertices_written": ply_count,
+                "max_point_cloud_points": self.config.max_point_cloud_points,
+            }
+        else:
+            result.report["point_cloud"] = {
+                "enabled": False,
+                "reason": "output_profile=compact",
+                "max_point_cloud_points": self.config.max_point_cloud_points,
+            }
+        result.report["output"] = {"profile": self.config.output_profile}
 
         with (output_dir / "decode_report.json").open("w", encoding="utf-8") as f:
             json.dump(result.report, f, indent=2, ensure_ascii=False)
 
     def save_fusion_outputs(self, fusion: FusionResult, output_dir: Path) -> None:
         output_dir = Path(output_dir).expanduser().resolve()
+        full_outputs = self.config.output_profile == "full"
+        if not full_outputs:
+            _prune_compact_fusion_output(output_dir)
+
         height_dir = output_dir / "height"
         masks_dir = output_dir / "masks"
         fusion_dir = output_dir / "fusion"
         point_dir = output_dir / "point_cloud"
-        for directory in (height_dir, masks_dir, fusion_dir, point_dir):
+        directories = [height_dir, masks_dir]
+        if full_outputs:
+            directories.extend([fusion_dir, point_dir])
+        for directory in directories:
             directory.mkdir(parents=True, exist_ok=True)
 
         np.save(height_dir / fusion.height.filename, fusion.height.height)
-        np.save(height_dir / "height.npy", fusion.height.height)
+        if full_outputs and fusion.height.filename != "height.npy":
+            np.save(height_dir / "height.npy", fusion.height.height)
         save_colormap(
             height_dir / "height_heatmap.png",
             fusion.height.height,
@@ -774,14 +803,15 @@ class PcbFppDecoder:
             with_colorbar=True,
             title="Fused height",
         )
-        save_colormap(
-            height_dir / "height_heatmap_colorbar.png",
-            fusion.height.height,
-            fusion.height.mask,
-            cmap="turbo",
-            with_colorbar=True,
-            title="Fused height",
-        )
+        if full_outputs:
+            save_colormap(
+                height_dir / "height_heatmap_colorbar.png",
+                fusion.height.height,
+                fusion.height.mask,
+                cmap="turbo",
+                with_colorbar=True,
+                title="Fused height",
+            )
         save_colormap(
             height_dir / "height_fused_preview.png",
             fusion.height.height,
@@ -795,41 +825,51 @@ class PcbFppDecoder:
         save_mask(masks_dir / "source_deg_180_only.png", source_map == 2)
         save_mask(masks_dir / "source_overlap.png", source_map == 3)
         save_mask(masks_dir / "source_missing.png", source_map == 0)
-        np.save(masks_dir / "source_map.npy", source_map)
+        if full_outputs:
+            np.save(masks_dir / "source_map.npy", source_map)
 
-        np.save(fusion_dir / "aligned_height_180.npy", fusion.aligned_height_180)
-        np.save(fusion_dir / "aligned_mask_180.npy", fusion.aligned_mask_180)
-        np.save(fusion_dir / "confidence.npy", fusion.confidence)
-        np.save(fusion_dir / "aligned_confidence_180.npy", fusion.aligned_confidence_180)
-        np.save(fusion_dir / "transform_matrix.npy", fusion.transform_matrix)
-        save_colormap(
-            fusion_dir / "aligned_height_180_preview.png",
-            fusion.aligned_height_180,
-            fusion.aligned_mask_180,
-            cmap="turbo",
-        )
-        save_colormap(
-            fusion_dir / "confidence_preview.png",
-            fusion.confidence,
-            fusion.height.mask,
-            cmap="viridis",
-        )
+        if full_outputs:
+            np.save(fusion_dir / "aligned_height_180.npy", fusion.aligned_height_180)
+            np.save(fusion_dir / "aligned_mask_180.npy", fusion.aligned_mask_180)
+            np.save(fusion_dir / "confidence.npy", fusion.confidence)
+            np.save(fusion_dir / "aligned_confidence_180.npy", fusion.aligned_confidence_180)
+            np.save(fusion_dir / "transform_matrix.npy", fusion.transform_matrix)
+            save_colormap(
+                fusion_dir / "aligned_height_180_preview.png",
+                fusion.aligned_height_180,
+                fusion.aligned_mask_180,
+                cmap="turbo",
+            )
+            save_colormap(
+                fusion_dir / "confidence_preview.png",
+                fusion.confidence,
+                fusion.height.mask,
+                cmap="viridis",
+            )
 
-        ply_count = write_ascii_ply(
-            point_dir / "point_cloud.ply",
-            fusion.height.height,
-            fusion.height.mask,
-            max_points=self.config.max_point_cloud_points,
-        )
-        save_point_cloud_preview(
-            point_dir / "point_cloud_preview.png",
-            fusion.height.height,
-            fusion.height.mask,
-        )
-        fusion.report["point_cloud"] = {
-            "ply_vertices_written": ply_count,
-            "max_point_cloud_points": self.config.max_point_cloud_points,
-        }
+            ply_count = write_ascii_ply(
+                point_dir / "point_cloud.ply",
+                fusion.height.height,
+                fusion.height.mask,
+                max_points=self.config.max_point_cloud_points,
+            )
+            save_point_cloud_preview(
+                point_dir / "point_cloud_preview.png",
+                fusion.height.height,
+                fusion.height.mask,
+            )
+            fusion.report["point_cloud"] = {
+                "enabled": True,
+                "ply_vertices_written": ply_count,
+                "max_point_cloud_points": self.config.max_point_cloud_points,
+            }
+        else:
+            fusion.report["point_cloud"] = {
+                "enabled": False,
+                "reason": "output_profile=compact",
+                "max_point_cloud_points": self.config.max_point_cloud_points,
+            }
+        fusion.report["output"] = {"profile": self.config.output_profile}
 
         with (output_dir / "decode_report.json").open("w", encoding="utf-8") as f:
             json.dump(fusion.report, f, indent=2, ensure_ascii=False)
@@ -1376,6 +1416,54 @@ def _is_exact_180_flip(
         dtype=np.float32,
     )
     return bool(np.allclose(matrix, expected, atol=1e-6))
+
+
+def _prune_compact_decode_output(output_dir: Path) -> None:
+    _remove_path(output_dir / "corrected")
+    _remove_path(output_dir / "point_cloud")
+    for relative in (
+        "phase/wrapped_phase.npy",
+        "phase/absolute_phase_raw.npy",
+        "phase/absolute_phase_before_correction_preview.png",
+        "height/height.npy",
+        "height/height_heatmap_colorbar.png",
+        "masks/analysis_roi_mask.npy",
+        "masks/marker_space_mask.npy",
+        "masks/pcb_analysis_mask.npy",
+    ):
+        _remove_path(output_dir / relative)
+    _remove_matching(output_dir / "gray", "*.npy")
+
+
+def _prune_compact_fusion_output(output_dir: Path) -> None:
+    _remove_path(output_dir / "point_cloud")
+    for relative in (
+        "height/height.npy",
+        "height/height_heatmap_colorbar.png",
+        "masks/source_map.npy",
+        "fusion/aligned_height_180.npy",
+        "fusion/aligned_mask_180.npy",
+        "fusion/confidence.npy",
+        "fusion/aligned_confidence_180.npy",
+        "fusion/transform_matrix.npy",
+        "fusion/aligned_height_180_preview.png",
+        "fusion/confidence_preview.png",
+    ):
+        _remove_path(output_dir / relative)
+
+
+def _remove_matching(directory: Path, pattern: str) -> None:
+    if not directory.is_dir():
+        return
+    for path in directory.glob(pattern):
+        _remove_path(path)
+
+
+def _remove_path(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path)
+    elif path.exists():
+        path.unlink()
 
 
 def _load_transform_matrix(path: Path) -> np.ndarray:

@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from .aruco_alignment import ARUCO_DICTIONARIES, parse_marker_ids
-from .decoder import DecodeConfig, PcbFppDecoder
+from .decoder import DecodeConfig, OUTPUT_PROFILES, PcbFppDecoder
 from .fusion_registration import (
     FUSION_REGISTRATION_CHOICES,
     estimate_and_save_fusion_transform,
@@ -273,6 +273,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fail phase-correlation registration below this response",
     )
     parser.add_argument("--save-debug", action="store_true")
+    parser.add_argument(
+        "--output-profile",
+        choices=OUTPUT_PROFILES,
+        default="compact",
+        help=(
+            "compact saves reports, previews, and essential phase/height arrays; "
+            "full also saves corrected frames, raw intermediate arrays, and PLY point clouds."
+        ),
+    )
     parser.add_argument("--max-point-cloud-points", type=int, default=300_000)
     return parser
 
@@ -319,6 +328,7 @@ def config_from_args(args: argparse.Namespace) -> DecodeConfig:
         pcb_width_mm=args.pcb_width_mm,
         pcb_height_mm=args.pcb_height_mm,
         pcb_margin_mm=args.pcb_margin_mm,
+        output_profile=args.output_profile,
         save_debug=args.save_debug,
         max_point_cloud_points=args.max_point_cloud_points,
     )

@@ -99,6 +99,8 @@ captures/<scan_id>/
   --median-filter 3
 ```
 
+CLI 기본 출력은 `compact` 프로필입니다. 보고서, 미리보기 PNG, 재사용에 필요한 핵심 `.npy`만 저장하고 보정 프레임 전체, 중간 배열 묶음, PLY 포인트 클라우드는 남기지 않습니다. 전체 진단 산출물이 필요할 때만 `--output-profile full`을 추가하세요.
+
 다른 각도를 직접 지정하려면 `--input-angle 180`처럼 지정합니다. 같은 스캔 루트에 `angle_000`과 `angle_180`이 모두 있고 바로 통합하려면 `--auto-phone-fusion`을 사용할 수 있습니다.
 
 ```powershell
@@ -244,6 +246,16 @@ python scripts/run_gui.py
 
 그래픽 화면에서는 입력/출력 폴더, 기준 scan 또는 기준 phase, 보정 설정 파일, 높이 모드, 임계값을 선택한 뒤 `Run decode`를 누르면 같은 파이프라인이 실행됩니다. `reference`, `triangulation`, `inverse-linear` 모드에서는 기준 phase 또는 기준 scan이 필요합니다.
 
+## 디버거 실행 (개발용)
+
+프로젝트 루트의 `run_debugger.bat`를 실행하면 디버그 GUI가 열립니다. 처음 한 번만 필요한 Python 패키지를 `%LOCALAPPDATA%\PCB_FPP_Decoder\debugger_venv`에 설치하고, 이후에는 그 환경을 재사용합니다. 따라서 프로젝트 폴더에는 `.venv`나 `dist`가 생성되지 않습니다.
+
+의존성을 갱신해야 할 때만 아래처럼 실행합니다.
+
+```bat
+run_debugger.bat --refresh
+```
+
 ## 실행 파일 빌드
 
 다른 Windows PC에서 사용할 실행 파일이 필요하면 프로젝트 루트에서 다음 파일을 실행합니다.
@@ -252,16 +264,19 @@ python scripts/run_gui.py
 build.bat
 ```
 
-빌드 스크립트는 `.venv`를 만들고 `requirements.txt`와 PyInstaller를 설치한 뒤 그래픽 화면 실행 파일과 보조 명령줄 실행 파일을 생성합니다.
+빌드 스크립트는 `.venv`를 만들고 `requirements.txt`와 PyInstaller를 설치한 뒤 그래픽 화면 실행 파일, 보조 명령줄 실행 파일, 디버그 GUI 실행 파일을 생성합니다. 이 절차는 다른 PC에 전달할 실행 파일이 필요할 때만 사용하세요.
 
 ```text
 dist/PCB_FPP_Decoder/PCB_FPP_Decoder.exe
 dist/PCB_FPP_Decoder_CLI/PCB_FPP_Decoder_CLI.exe
+dist/PCB_FPP_Debugger/PCB_FPP_Debugger.exe
 ```
 
 일반 사용자는 `dist/PCB_FPP_Decoder/PCB_FPP_Decoder.exe`를 더블 클릭하면 됩니다. 프로젝트 루트의 `PCB_FPP_Decoder.vbs`를 더블 클릭해도 같은 그래픽 화면이 실행됩니다. 다른 PC로 전달할 때는 `dist/PCB_FPP_Decoder` 폴더 전체를 복사하세요. 실행 PC에는 Python을 별도로 설치하지 않아도 됩니다.
 
 ## 출력 구조
+
+아래 구조는 `--output-profile full` 기준입니다. 기본 `compact` 출력에서는 `corrected/`, `point_cloud/`, 대부분의 중간 `.npy` 파일과 중복 `height.npy` 별칭을 생략합니다.
 
 ```text
 processed/<scan_id>/deg_0/

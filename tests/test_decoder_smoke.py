@@ -306,6 +306,39 @@ def test_cli_resolves_pro4500_phone_scan_root_angle_folder(tmp_path):
     assert (output_dir / "decode_report.json").exists()
     report = json.loads((output_dir / "decode_report.json").read_text(encoding="utf-8"))
     assert report["input_dir"].endswith("angle_000")
+    assert report["output"]["profile"] == "compact"
+    assert (output_dir / "phase" / "absolute_phase.npy").exists()
+    assert (output_dir / "height" / "height_relative.npy").exists()
+    assert not (output_dir / "corrected").exists()
+    assert not (output_dir / "point_cloud" / "point_cloud.ply").exists()
+
+
+def test_cli_full_output_profile_keeps_point_cloud_artifacts(tmp_path):
+    input_dir = tmp_path / "captures" / "scan_full" / "angle_000"
+    output_dir = tmp_path / "processed" / "scan_full"
+    _write_synthetic_scan(input_dir)
+
+    exit_code = cli_main(
+        [
+            "--input",
+            str(input_dir),
+            "--output",
+            str(output_dir),
+            "--median-filter",
+            "0",
+            "--analysis-roi",
+            "none",
+            "--output-profile",
+            "full",
+        ]
+    )
+
+    assert exit_code == 0
+    report = json.loads((output_dir / "decode_report.json").read_text(encoding="utf-8"))
+    assert report["output"]["profile"] == "full"
+    assert report["point_cloud"]["enabled"] is True
+    assert (output_dir / "corrected").exists()
+    assert (output_dir / "point_cloud" / "point_cloud.ply").exists()
 
 
 def test_cli_defaults_use_stage_aruco_settings(tmp_path):
@@ -321,6 +354,7 @@ def test_cli_defaults_use_stage_aruco_settings(tmp_path):
     config = config_from_args(args)
 
     assert args.fusion_registration == "aruco"
+    assert config.output_profile == "compact"
     assert config.analysis_roi_mode == "aruco"
     assert config.analysis_aruco_layout == "stage-cross"
     assert config.analysis_marker_center_radius_mm == 30.0
