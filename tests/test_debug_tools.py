@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 import numpy as np
@@ -56,13 +55,17 @@ def test_single_image_pattern_debug_writes_compact_artifacts(tmp_path):
     output_dir = tmp_path / "debug_single"
     steps = generate_single_image_pattern_debug(image_path, output_dir)
 
-    assert [step.title for step in steps] == ["Debug overview", "Final pattern overlay"]
+    assert steps[0].title == "Debug overview"
+    assert steps[-1].title == "Final pattern overlay"
+    assert "Background removed signal" in [step.title for step in steps]
+    assert all(step.path.exists() for step in steps)
     assert (output_dir / "debug_overview.png").exists()
     assert (output_dir / "final_result.png").exists()
     assert not (output_dir / "debug_steps").exists()
-    report = json.loads((output_dir / "analysis_report.json").read_text(encoding="utf-8"))
-    assert report["metadata"]["mode"] == "single-image-pattern-extraction"
-    assert report["metadata"]["valid_pattern_pixel_ratio"] > 0
+    assert sorted(path.name for path in output_dir.iterdir()) == [
+        "debug_overview.png",
+        "final_result.png",
+    ]
 
 
 def test_scan_debug_writes_compact_height_artifacts(tmp_path):
@@ -83,11 +86,16 @@ def test_scan_debug_writes_compact_height_artifacts(tmp_path):
         ),
     )
 
-    assert [step.title for step in steps] == ["Debug overview", "Final result"]
+    assert steps[0].title == "Debug overview"
+    assert steps[-1].title == "Final result"
+    assert "Raw white frame" in [step.title for step in steps]
+    assert "Height map" in [step.title for step in steps]
+    assert all(step.path.exists() for step in steps)
     assert (output_dir / "debug_overview.png").exists()
     assert (output_dir / "final_result.png").exists()
     assert not (output_dir / "debug_steps").exists()
     assert not (output_dir / "height").exists()
-    report = json.loads((output_dir / "analysis_report.json").read_text(encoding="utf-8"))
-    assert report["metadata"]["mode"] == "scan-sequence"
-    assert report["metadata"]["mask_coverage"]["combined_mask_ratio"] > 0.9
+    assert sorted(path.name for path in output_dir.iterdir()) == [
+        "debug_overview.png",
+        "final_result.png",
+    ]

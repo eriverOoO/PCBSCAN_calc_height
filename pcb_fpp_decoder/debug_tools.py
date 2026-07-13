@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import atexit
 import json
 import shutil
 import tempfile
@@ -20,6 +21,9 @@ from .visualization import (
     save_preview_gray,
     save_wrapped_phase_preview,
 )
+
+
+_SESSION_PREVIEW_DIRS: list[Path] = []
 
 
 @dataclass(frozen=True)
@@ -73,32 +77,38 @@ def generate_single_image_pattern_debug(
 
     overview_path = output_dir / "debug_overview.png"
     final_path = output_dir / "final_result.png"
-    _save_single_image_compact_overview(
+    preview_dir = _make_session_preview_dir()
+    original_step = preview_dir / "single_01_original.png"
+    intensity_step = preview_dir / "single_02_uv_channel.png"
+    signal_step = preview_dir / "single_03_background_removed.png"
+    mask_step = preview_dir / "single_04_binary_pattern.png"
+    overlay_step = preview_dir / "single_05_final_overlay.png"
+    save_uint8_image(original_step, rgb)
+    save_preview_gray(intensity_step, intensity)
+    save_preview_gray(signal_step, pattern_signal)
+    save_mask(mask_step, mask)
+    save_uint8_image(overlay_step, overlay)
+    _save_contact_sheet(
         overview_path,
-        rgb,
-        intensity,
-        pattern_signal,
-        mask,
-        overlay,
+        [
+            ("Original", original_step),
+            ("UV channel", intensity_step),
+            ("Background removed", signal_step),
+            ("Binary pattern", mask_step),
+            ("Final overlay", overlay_step),
+        ],
     )
     save_uint8_image(final_path, overlay)
     steps = [
         DebugStep("Debug overview", overview_path, "overview"),
+        DebugStep("Original capture", original_step, "input"),
+        DebugStep("UV intensity channel", intensity_step, "input"),
+        DebugStep("Background removed signal", signal_step, "pattern-extraction"),
+        DebugStep("Binary pattern mask", mask_step, "pattern-extraction"),
+        DebugStep("Pattern overlay preview", overlay_step, "final"),
         DebugStep("Final pattern overlay", final_path, "final", f"threshold={threshold:.4f}"),
     ]
 
-    _write_analysis_report(
-        output_dir,
-        {
-            "mode": "single-image-pattern-extraction",
-            "input_image": str(image_path),
-            "color_mode": color_mode,
-            "background_sigma": background_sigma,
-            "otsu_threshold": float(threshold),
-            "valid_pattern_pixel_ratio": float(np.count_nonzero(mask) / mask.size),
-        },
-        artifacts={"debug_overview": overview_path, "final_result": final_path},
-    )
     return steps
 
 
@@ -118,79 +128,73 @@ def generate_scan_debug(
     fusion_settings = fusion_settings or FusionDebugSettings()
     estimated_transform_summary: str | None = None
 
-    with tempfile.TemporaryDirectory(prefix="pcb_fpp_debug_") as temp:
-        temp_dir = Path(temp)
-        if input_180_dir is None:
-            result = PcbFppDecoder(config)._decode_in_memory(input_dir)
-            _save_result_debug_steps(result, temp_dir, "single")
-            overview_source = temp_dir / "single_00_pipeline_overview.png"
-            final_source = temp_dir / "single_15_height_map.png"
-            metadata: dict[str, Any] = {
-                "mode": "scan-sequence",
-                "input_dir": str(input_dir),
-                "height_mode": config.height_mode,
-                "mask_coverage": result.report.get("mask_coverage"),
-                "height": result.report.get("height"),
-            }
-            analysis: dict[str, Any] = result.report
-        else:
-            input_180_dir = Path(input_180_dir).expanduser().resolve()
-            if fusion_settings.registration != "rotation-180":
-                if config.fusion_transform is not None:
-                    raise ValueError(
-                        "Fusion transform file cannot be combined with automatic fusion registration."
-                    )
-                estimated_transform = estimate_and_save_fusion_transform(
-                    fusion_settings.registration,
-                    input_dir,
-                    input_180_dir,
-                    temp_dir,
-                    aruco_dictionary=fusion_settings.aruco_dictionary,
-                    aruco_ids=fusion_settings.aruco_ids,
-                    aruco_image=fusion_settings.registration_image,
-                    aruco_method=fusion_settings.aruco_method,
-                    phase_correlation_image=fusion_settings.registration_image,
+    temp_dir = _make_session_preview_dir()
+    if input_180_dir is None:
+        result = PcbFppDecoder(config)._decode_in_memory(input_dir)
+        preview_steps = _save_result_debug_steps(result, temp_dir, "single")
+        overview_source = temp_dir / "single_00_pipeline_overview.png"
+        final_source = temp_dir / "single_15_height_map.png"
+    else:
+        input_180_dir = Path(input_180_dir).expanduser().resolve()
+        if fusion_settings.registration != "rotation-180":
+            if config.fusion_transform is not None:
+                raise ValueError(
+                    "Fusion transform file cannot be combined with automatic fusion registration."
                 )
-                if estimated_transform is not None:
-                    config.fusion_transform = estimated_transform.path
-                    estimated_transform_summary = estimated_transform.summary
-
-            decoder = PcbFppDecoder(config)
-            fusion = decoder.fuse_decode_results(
-                decoder._decode_in_memory(input_dir),
-                decoder._decode_in_memory(input_180_dir),
+            estimated_transform = estimate_and_save_fusion_transform(
+                fusion_settings.registration,
+                input_dir,
+                input_180_dir,
+                temp_dir,
+                aruco_dictionary=fusion_settings.aruco_dictionary,
+                aruco_ids=fusion_settings.aruco_ids,
+                aruco_image=fusion_settings.registration_image,
+                aruco_method=fusion_settings.aruco_method,
+                phase_correlation_image=fusion_settings.registration_image,
             )
-            _save_fusion_debug_steps(fusion, temp_dir)
-            overview_source = temp_dir / "fusion_00_overview.png"
-            final_source = temp_dir / "fusion_05_fused_height_map.png"
-            metadata = {
-                "mode": "scan-sequence-fusion",
-                "input_dir": str(input_dir),
-                "input_180_dir": str(input_180_dir),
-                "height_mode": config.height_mode,
-                "fusion_registration": asdict(fusion_settings),
-                "estimated_transform": estimated_transform_summary,
-                "fusion": fusion.report.get("fusion"),
-                "height": fusion.report.get("height"),
-            }
-            analysis = fusion.report
+            if estimated_transform is not None:
+                config.fusion_transform = estimated_transform.path
+                estimated_transform_summary = estimated_transform.summary
 
-        overview_path = output_dir / "debug_overview.png"
-        final_path = output_dir / "final_result.png"
-        shutil.copy2(overview_source, overview_path)
-        shutil.copy2(final_source, final_path)
+        decoder = PcbFppDecoder(config)
+        fusion = decoder.fuse_decode_results(
+            decoder._decode_in_memory(input_dir),
+            decoder._decode_in_memory(input_180_dir),
+        )
+        preview_steps = _save_fusion_debug_steps(fusion, temp_dir)
+        overview_source = temp_dir / "fusion_00_overview.png"
+        final_source = temp_dir / "fusion_05_fused_height_map.png"
+
+    overview_path = output_dir / "debug_overview.png"
+    final_path = output_dir / "final_result.png"
+    shutil.copy2(overview_source, overview_path)
+    shutil.copy2(final_source, final_path)
 
     steps = [
         DebugStep("Debug overview", overview_path, "overview"),
+        *[
+            step
+            for step in preview_steps
+            if step.path != overview_source
+        ],
         DebugStep("Final result", final_path, "final"),
     ]
-    _write_analysis_report(
-        output_dir,
-        metadata,
-        analysis=analysis,
-        artifacts={"debug_overview": overview_path, "final_result": final_path},
-    )
     return steps
+
+
+def _make_session_preview_dir() -> Path:
+    path = Path(tempfile.mkdtemp(prefix="pcb_fpp_debug_preview_"))
+    _SESSION_PREVIEW_DIRS.append(path)
+    return path
+
+
+def _cleanup_session_preview_dirs() -> None:
+    for path in list(_SESSION_PREVIEW_DIRS):
+        shutil.rmtree(path, ignore_errors=True)
+    _SESSION_PREVIEW_DIRS.clear()
+
+
+atexit.register(_cleanup_session_preview_dirs)
 
 
 def load_debug_manifest(output_dir: Path) -> list[DebugStep]:
@@ -198,6 +202,16 @@ def load_debug_manifest(output_dir: Path) -> list[DebugStep]:
     manifest_path = output_dir / "analysis_report.json"
     if not manifest_path.exists():
         manifest_path = output_dir / "debug_manifest.json"
+    if not manifest_path.exists():
+        steps = []
+        for title, group, filename in (
+            ("Debug overview", "overview", "debug_overview.png"),
+            ("Final result", "final", "final_result.png"),
+        ):
+            path = output_dir / filename
+            if path.exists():
+                steps.append(DebugStep(title=title, path=path, group=group))
+        return steps
     with manifest_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
     steps = []
