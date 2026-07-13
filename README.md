@@ -4,6 +4,79 @@
 
 기본 입력은 `captures` 폴더 아래의 촬영 세트이고, 처리 결과는 별도의 `processed` 폴더에 저장하는 구성을 권장합니다.
 
+## 처음 사용하는 사람을 위한 사용법
+
+이 프로그램을 전달받은 사용자는 보통 Python 코드를 직접 다루지 않고 Windows 실행 파일로 사용합니다. 배포 폴더를 받은 경우 `dist/PCB_FPP_Decoder/PCB_FPP_Decoder.exe`를 실행하세요. 개발용 소스 폴더를 받은 경우에는 먼저 [실행 파일 빌드](#실행-파일-빌드)를 따라 EXE를 만든 뒤 같은 파일을 실행하면 됩니다.
+
+### 1. 입력 스캔 준비
+
+디코더가 읽을 수 있는 입력은 한 번의 촬영에 해당하는 패턴 이미지 묶음입니다. 최소한 0..13번 패턴이 필요하고, 14..21번 반전 Gray 패턴이 있으면 더 안정적으로 동작합니다.
+
+```text
+pattern_000.png  White
+pattern_001.png  Black
+pattern_002.png  Gray0
+...
+pattern_009.png  Gray7
+pattern_010.png  Sine_000
+pattern_011.png  Sine_090
+pattern_012.png  Sine_180
+pattern_013.png  Sine_270
+pattern_014.png..pattern_021.png  Gray0_inv..Gray7_inv
+```
+
+촬영 프로그램이 `scan_log.json`을 함께 저장했다면 파일명이 조금 달라도 됩니다. 이 경우 디코더는 `scan_log.json`에 기록된 `pattern_id`와 파일 경로를 우선 사용합니다. 로그가 없다면 파일명에 `pattern_000.png`처럼 pattern id가 들어 있어야 합니다.
+
+입력 폴더 예시는 다음 중 하나처럼 구성할 수 있습니다.
+
+```text
+captures/<scan_id>/pattern_000.png
+captures/<scan_id>/angle_000/pattern_000.png
+captures/<scan_id>/deg_0/pattern_000.png
+```
+
+`angle_000`, `deg_0`처럼 각도별 하위 폴더가 있는 경우 스캔 루트 폴더를 선택해도 디코더가 사용할 수 있는 하위 폴더를 자동으로 찾습니다.
+
+### 2. GUI로 디코딩하기
+
+가장 쉬운 사용 방법은 그래픽 화면입니다.
+
+1. `PCB_FPP_Decoder.exe`를 실행합니다.
+2. `입력 스캔 폴더`에 촬영 이미지가 들어 있는 폴더를 선택합니다.
+3. `출력 폴더`에는 결과를 저장할 새 폴더를 선택합니다.
+4. 우선 높이 모드는 `relative`로 둔 채 실행해 입력 데이터가 정상인지 확인합니다.
+5. 기준 평면을 촬영해 둔 경우 `Reference scan` 또는 `Reference phase`를 지정하고 `reference`, `triangulation`, `inverse-linear` 중 필요한 높이 모드를 선택합니다.
+6. 물리 단위 높이(mm 등)가 필요하면 `Calibration config`에 보정 JSON 또는 NPZ 파일을 지정하고 `triangulation` 또는 `inverse-linear` 모드를 사용합니다.
+7. `Run decode`를 누릅니다.
+8. 완료 후 표시되는 valid ratio와 heat map 경로를 확인합니다.
+
+처음 실행할 때는 기본값으로 충분합니다. 결과가 너무 많이 비어 있으면 `Min signal`, `Saturation threshold`, `Dark threshold`, `Modulation threshold`를 촬영 조건에 맞게 조정합니다. PCB 반사나 그림자가 많은 경우에는 threshold를 낮추기보다 먼저 입력 이미지의 포화, 초점, 노출, 마스크 결과를 확인하는 편이 안전합니다.
+
+### 3. 어떤 높이 모드를 골라야 하나
+
+- `relative`: 기준 평면이나 보정 파일 없이 실행합니다. 실제 mm 높이가 아니라 phase 기반 미리보기입니다. 새 데이터가 정상적으로 디코딩되는지 확인할 때 가장 먼저 사용합니다.
+- `reference`: 같은 조건에서 촬영한 평면 기준 데이터를 빼서 사다리꼴 투영 성분을 제거합니다. 단위는 여전히 phase입니다.
+- `triangulation`: 기준 평면과 `d`, `l`, `p` 보정값을 이용해 물리 단위 높이를 계산합니다.
+- `inverse-linear`: 여러 기준 높이로 얻은 `u`, `v`, `w` 보정 모델을 이용해 물리 단위 높이를 계산합니다.
+
+물리 높이가 목적이면 기준 평면 촬영은 사실상 필수입니다. 기준 평면 없이 단일 object scan만 넣으면 `relative` 미리보기는 가능하지만, 실제 높이로 해석하기 어렵습니다.
+
+### 4. 결과가 정상인지 확인하는 순서
+
+디코딩 후에는 먼저 heat map만 보지 말고 다음 항목을 함께 확인하세요.
+
+1. `combined_mask`: 실제 계산에 사용된 픽셀 영역입니다. PCB 대부분이 빠져 있으면 노출, 초점, threshold, ROI 설정을 확인해야 합니다.
+2. `stripe_order_preview`: Gray code 줄무늬 번호가 큰 끊김 없이 변하는지 확인합니다.
+3. `wrapped_phase_preview`: sine phase가 부드럽게 이어지는지 확인합니다.
+4. `absolute_phase_preview`: Gray code와 sine phase가 결합된 전체 위상이 계단처럼 튀지 않는지 확인합니다.
+5. `delta_phase_preview`: 기준 평면을 사용한 경우 object와 reference의 차이가 의도한 표면 형상만 남기는지 확인합니다.
+
+mask가 넓게 빠지는 것은 실패라기보다 “신뢰할 수 없는 픽셀을 제외했다”는 뜻입니다. 다만 PCB의 핵심 영역이 빠졌다면 촬영 조건이나 threshold를 다시 조정해야 합니다.
+
+### 5. 다른 PC에 전달할 때
+
+일반 사용자는 Python을 설치할 필요가 없습니다. 빌드된 `dist/PCB_FPP_Decoder` 폴더 전체를 전달하고, 그 안의 `PCB_FPP_Decoder.exe`를 실행하게 하면 됩니다. 폴더 안의 DLL과 라이브러리가 함께 필요하므로 EXE 파일 하나만 따로 복사하지 마세요.
+
 ## 광학 설정 메모
 
 프로젝터를 약 30도 기울여 조사하면 PCB에서 가까운 쪽과 먼 쪽의 초점, 줄무늬 간격, 투영 기하가 달라질 수 있습니다. 이 디코더는 프로젝터 이미지를 사전에 왜곡하는 keystone pre-distortion을 기본 가정으로 사용하지 않습니다.
