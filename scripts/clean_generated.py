@@ -116,13 +116,13 @@ def _iter_targets(root: Path, *, include_loose_arrays: bool, include_dist: bool)
                 yield path
 
     for cache_dir in root.rglob("__pycache__"):
-        if _inside_nested_repo(cache_dir, root):
+        if _inside_nested_repo(cache_dir, root) or _is_inside_dist(cache_dir, root):
             continue
         yield cache_dir
 
     for pattern in FILE_GLOBS:
         for path in root.rglob(pattern):
-            if _inside_nested_repo(path, root):
+            if _inside_nested_repo(path, root) or _is_inside_dist(path, root):
                 continue
             yield path
 
@@ -159,6 +159,10 @@ def _inside_nested_repo(path: Path, root: Path) -> bool:
             return False
         current = current.parent
     return True
+
+
+def _is_inside_dist(path: Path, root: Path) -> bool:
+    return _is_relative_to(path, root / "dist")
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:
