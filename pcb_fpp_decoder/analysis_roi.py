@@ -41,9 +41,11 @@ def estimate_aruco_analysis_roi(
     pcb_width_mm: float | None = None,
     pcb_height_mm: float | None = None,
     pcb_margin_mm: float = 0.0,
+    pcb_inset_mm: float = 0.5,
 ) -> AnalysisRoiResult:
     marker_ids = tuple(int(marker_id) for marker_id in marker_ids)
     pcb_margin_mm = float(pcb_margin_mm)
+    pcb_inset_mm = float(pcb_inset_mm)
     _validate_roi_inputs(
         marker_ids,
         layout,
@@ -54,6 +56,7 @@ def estimate_aruco_analysis_roi(
         pcb_width_mm,
         pcb_height_mm,
         pcb_margin_mm,
+        pcb_inset_mm,
     )
 
     image_path = Path(input_dir) / image_name
@@ -87,6 +90,7 @@ def estimate_aruco_analysis_roi(
             pcb_width_mm=float(pcb_width_mm),
             pcb_height_mm=float(pcb_height_mm),
             pcb_margin_mm=pcb_margin_mm,
+            pcb_inset_mm=pcb_inset_mm,
         )
 
     ordered_markers = _order_markers_by_center(requested_markers)
@@ -112,11 +116,11 @@ def estimate_aruco_analysis_roi(
         if pcb_width_mm is not None and pcb_height_mm is not None:
             effective_pcb_width_mm = min(
                 float(workspace_width_mm),
-                float(pcb_width_mm) + 2.0 * pcb_margin_mm,
+                _effective_pcb_extent_mm(float(pcb_width_mm), pcb_margin_mm, pcb_inset_mm),
             )
             effective_pcb_height_mm = min(
                 float(workspace_height_mm),
-                float(pcb_height_mm) + 2.0 * pcb_margin_mm,
+                _effective_pcb_extent_mm(float(pcb_height_mm), pcb_margin_mm, pcb_inset_mm),
             )
             pcb_mask = _centered_pcb_mask_from_homography(
                 shape,
@@ -147,6 +151,7 @@ def estimate_aruco_analysis_roi(
         pcb_width_mm=pcb_width_mm,
         pcb_height_mm=pcb_height_mm,
         pcb_margin_mm=pcb_margin_mm,
+        pcb_inset_mm=pcb_inset_mm,
         workspace_homography=workspace_homography,
     )
 
@@ -172,6 +177,7 @@ def _validate_roi_inputs(
     pcb_width_mm: float | None,
     pcb_height_mm: float | None,
     pcb_margin_mm: float,
+    pcb_inset_mm: float,
 ) -> None:
     if len(marker_ids) != 4:
         raise ValueError("ArUco analysis ROI requires exactly four marker IDs")
@@ -184,6 +190,17 @@ def _validate_roi_inputs(
     _validate_size_pair("PCB", pcb_width_mm, pcb_height_mm)
     if pcb_margin_mm < 0:
         raise ValueError("PCB margin must be zero or positive")
+    if pcb_inset_mm < 0:
+        raise ValueError("PCB inset must be zero or positive")
+    if (
+        pcb_width_mm is not None
+        and pcb_height_mm is not None
+        and (
+            _effective_pcb_extent_mm(float(pcb_width_mm), pcb_margin_mm, pcb_inset_mm) <= 0
+            or _effective_pcb_extent_mm(float(pcb_height_mm), pcb_margin_mm, pcb_inset_mm) <= 0
+        )
+    ):
+        raise ValueError("PCB inset must leave a positive analysis area")
 
     pcb_size_given = pcb_width_mm is not None or pcb_height_mm is not None
     workspace_size_given = workspace_width_mm is not None or workspace_height_mm is not None
@@ -237,6 +254,7 @@ def _estimate_stage_cross_roi(
     pcb_width_mm: float,
     pcb_height_mm: float,
     pcb_margin_mm: float,
+    pcb_inset_mm: float,
 ) -> AnalysisRoiResult:
     cv2 = _load_cv2()
     # IDs are interpreted in fixed physical order: top, right, bottom, left.
@@ -262,8 +280,12 @@ def _estimate_stage_cross_roi(
             (stage_x * stage_x + stage_y * stage_y) <= stage_radius_mm * stage_radius_mm
         )
 
-    effective_pcb_width_mm = float(pcb_width_mm) + 2.0 * pcb_margin_mm
-    effective_pcb_height_mm = float(pcb_height_mm) + 2.0 * pcb_margin_mm
+    effective_pcb_width_mm = _effective_pcb_extent_mm(
+        float(pcb_width_mm), pcb_margin_mm, pcb_inset_mm
+    )
+    effective_pcb_height_mm = _effective_pcb_extent_mm(
+        float(pcb_height_mm), pcb_margin_mm, pcb_inset_mm
+    )
     if stage_diameter_mm is not None:
         effective_pcb_width_mm = min(float(stage_diameter_mm), effective_pcb_width_mm)
         effective_pcb_height_mm = min(float(stage_diameter_mm), effective_pcb_height_mm)
@@ -301,6 +323,7 @@ def _estimate_stage_cross_roi(
         pcb_width_mm=pcb_width_mm,
         pcb_height_mm=pcb_height_mm,
         pcb_margin_mm=pcb_margin_mm,
+        pcb_inset_mm=pcb_inset_mm,
         workspace_homography=homography.astype(np.float32),
         layout="stage-cross",
         marker_center_radius_mm=marker_center_radius_mm,
@@ -483,6 +506,7 @@ def _build_report(
     pcb_width_mm: float | None,
     pcb_height_mm: float | None,
     pcb_margin_mm: float,
+    pcb_inset_mm: float,
     workspace_homography: np.ndarray | None,
     layout: str = "corners",
     marker_center_radius_mm: float | None = None,
@@ -497,6 +521,7 @@ def _build_report(
         pcb_width_mm=pcb_width_mm,
         pcb_height_mm=pcb_height_mm,
         pcb_margin_mm=pcb_margin_mm,
+        pcb_inset_mm=pcb_inset_mm,
     )
     return {
         "enabled": True,
@@ -531,6 +556,7 @@ def _build_report(
                 "width": float(pcb_width_mm),
                 "height": float(pcb_height_mm),
                 "margin": float(pcb_margin_mm),
+                "inset": float(pcb_inset_mm),
                 "effective_width": effective_pcb_size_mm[0],
                 "effective_height": effective_pcb_size_mm[1],
                 "assumed_centered": True,
@@ -561,12 +587,17 @@ def _effective_pcb_size_report(
     pcb_width_mm: float | None,
     pcb_height_mm: float | None,
     pcb_margin_mm: float,
+    pcb_inset_mm: float,
 ) -> tuple[float | None, float | None]:
     if pcb_width_mm is None or pcb_height_mm is None:
         return None, None
 
-    effective_width = float(pcb_width_mm) + 2.0 * pcb_margin_mm
-    effective_height = float(pcb_height_mm) + 2.0 * pcb_margin_mm
+    effective_width = _effective_pcb_extent_mm(
+        float(pcb_width_mm), pcb_margin_mm, pcb_inset_mm
+    )
+    effective_height = _effective_pcb_extent_mm(
+        float(pcb_height_mm), pcb_margin_mm, pcb_inset_mm
+    )
     if layout == "stage-cross":
         if stage_diameter_mm is not None:
             effective_width = min(float(stage_diameter_mm), effective_width)
@@ -579,3 +610,7 @@ def _effective_pcb_size_report(
         float(min(float(workspace_width_mm), effective_width)),
         float(min(float(workspace_height_mm), effective_height)),
     )
+
+
+def _effective_pcb_extent_mm(size_mm: float, margin_mm: float, inset_mm: float) -> float:
+    return size_mm + 2.0 * margin_mm - 2.0 * inset_mm

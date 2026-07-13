@@ -421,6 +421,7 @@ class DecoderGui:
         self.analysis_stage_diameter_var = StringVar(value="105")
         self.pcb_size_var = StringVar(value="30,30")
         self.pcb_margin_var = StringVar(value="0")
+        self.pcb_inset_var = StringVar(value="0.5")
         self.max_points_var = StringVar(value="300000")
         self.detrend_var = IntVar(value=1)
         self.correction_var = IntVar(value=1)
@@ -498,6 +499,7 @@ class DecoderGui:
         self._entry_row(height, "스테이지 지름 mm", self.analysis_stage_diameter_var)
         self._entry_row(height, "PCB W,H mm", self.pcb_size_var)
         self._entry_row(height, "PCB margin mm", self.pcb_margin_var)
+        self._entry_row(height, "PCB inset mm", self.pcb_inset_var)
         self._option_row(
             height,
             "ArUco 사전",
@@ -720,6 +722,7 @@ class DecoderGui:
         pcb_size = self._parse_size_pair("PCB W,H mm", self.pcb_size_var.get())
         analysis_roi_mode = self.analysis_roi_var.get()
         pcb_margin_mm = _parse_float("PCB margin mm", self.pcb_margin_var.get() or "0")
+        pcb_inset_mm = _parse_float("PCB inset mm", self.pcb_inset_var.get() or "0")
         analysis_layout = self.analysis_aruco_layout_var.get()
         marker_radius_mm = _parse_optional_float(
             "마커 반경 mm",
@@ -774,6 +777,7 @@ class DecoderGui:
             pcb_width_mm=pcb_size[0] if pcb_size else None,
             pcb_height_mm=pcb_size[1] if pcb_size else None,
             pcb_margin_mm=pcb_margin_mm,
+            pcb_inset_mm=pcb_inset_mm,
             max_point_cloud_points=_parse_int("최대 3D 점 수", self.max_points_var.get()),
         )
 

@@ -262,6 +262,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Extra margin added around the centered PCB analysis area, in millimeters.",
     )
     parser.add_argument(
+        "--pcb-inset-mm",
+        type=float,
+        default=0.5,
+        help=(
+            "Safety band excluded inside the PCB outline to prevent exposed stage paper "
+            "from entering height analysis. Default: 0.5."
+        ),
+    )
+    parser.add_argument(
         "--phase-correlation-image",
         default="pattern_000.png",
         help="Image file used for phase-correlation registration",
@@ -328,6 +337,7 @@ def config_from_args(args: argparse.Namespace) -> DecodeConfig:
         pcb_width_mm=args.pcb_width_mm,
         pcb_height_mm=args.pcb_height_mm,
         pcb_margin_mm=args.pcb_margin_mm,
+        pcb_inset_mm=args.pcb_inset_mm,
         output_profile=args.output_profile,
         save_debug=args.save_debug,
         max_point_cloud_points=args.max_point_cloud_points,

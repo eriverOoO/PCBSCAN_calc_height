@@ -213,7 +213,8 @@ def test_aruco_analysis_roi_limits_height_to_centered_pcb_size(tmp_path):
     assert roi_report["enabled"] is True
     assert roi_report["pcb_size_mm"]["width"] == 50.0
     assert roi_report["pcb_size_mm"]["margin"] == 2.0
-    assert roi_report["pcb_size_mm"]["effective_width"] == 54.0
+    assert roi_report["pcb_size_mm"]["inset"] == 0.5
+    assert roi_report["pcb_size_mm"]["effective_width"] == 53.0
     assert roi_report["pcb_size_mm"]["assumed_centered"] is True
     assert result.report["mask_coverage"]["combined_mask_ratio"] < 0.2
 
@@ -279,7 +280,8 @@ def test_stage_cross_aruco_analysis_roi_masks_non_pcb_stage_paper(tmp_path):
     assert roi_report["stage_layout_mm"]["marker_center_radius"] == 30.0
     assert roi_report["stage_layout_mm"]["stage_diameter"] == 105.0
     assert roi_report["pcb_size_mm"]["width"] == 30.0
-    assert roi_report["pcb_size_mm"]["effective_width"] == 30.0
+    assert roi_report["pcb_size_mm"]["inset"] == 0.5
+    assert roi_report["pcb_size_mm"]["effective_width"] == 29.0
     assert result.report["mask_coverage"]["combined_mask_ratio"] < 0.1
 
 
@@ -361,6 +363,7 @@ def test_cli_defaults_use_stage_aruco_settings(tmp_path):
     assert config.analysis_stage_diameter_mm == 105.0
     assert config.pcb_width_mm == 30.0
     assert config.pcb_height_mm == 30.0
+    assert config.pcb_inset_mm == 0.5
 
 
 def test_phone_capture_metadata_is_reported(tmp_path):

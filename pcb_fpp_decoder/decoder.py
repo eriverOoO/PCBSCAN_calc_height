@@ -105,6 +105,7 @@ class DecodeConfig:
     pcb_width_mm: float | None = None
     pcb_height_mm: float | None = None
     pcb_margin_mm: float = 0.0
+    pcb_inset_mm: float = 0.5
     output_profile: str = "full"
     save_debug: bool = False
     epsilon: float = 1e-6
@@ -539,6 +540,7 @@ class PcbFppDecoder:
             pcb_width_mm=self.config.pcb_width_mm,
             pcb_height_mm=self.config.pcb_height_mm,
             pcb_margin_mm=self.config.pcb_margin_mm,
+            pcb_inset_mm=self.config.pcb_inset_mm,
         )
 
     def fuse_decode_results(self, deg0: DecodeResult, deg180: DecodeResult) -> FusionResult:
