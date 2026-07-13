@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 DIRECT_TARGETS = (
     ".venv",
-    "dist",
     "processed",
     ".pytest_cache",
     ".mypy_cache",
@@ -49,9 +48,22 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Also delete generated-looking .npy/.ply files outside known output folders.",
     )
+    parser.add_argument(
+        "--include-dist",
+        action="store_true",
+        help="Also delete built executables under dist/. This is disabled by default.",
+    )
     args = parser.parse_args(argv)
 
-    targets = list(_dedupe(_iter_targets(ROOT, include_loose_arrays=args.include_loose_arrays)))
+    targets = list(
+        _dedupe(
+            _iter_targets(
+                ROOT,
+                include_loose_arrays=args.include_loose_arrays,
+                include_dist=args.include_dist,
+            )
+        )
+    )
     rows = [(path, _path_size(path)) for path in targets if path.exists()]
     rows.sort(key=lambda item: item[1], reverse=True)
 
@@ -80,11 +92,16 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _iter_targets(root: Path, *, include_loose_arrays: bool):
+def _iter_targets(root: Path, *, include_loose_arrays: bool, include_dist: bool):
     for relative in DIRECT_TARGETS:
         path = root / relative
         if path.exists():
             yield path
+
+    if include_dist:
+        dist_dir = root / "dist"
+        if dist_dir.exists():
+            yield dist_dir
 
     build_dir = root / "build"
     if build_dir.is_dir():

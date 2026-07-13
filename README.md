@@ -36,6 +36,12 @@ captures/scan_xxx/
 
 14..21번 반전 Gray 패턴이 있으면 기본값인 `--gray-decode-mode auto`에서 자동으로 정상/반전 쌍 디코딩을 사용합니다.
 
+PRO4500 촬영기의 최종 `pattern_XXX.png`가 mono16 PNG이면 입력 단계에서
+선형 0..255 부동소수점 범위로 정규화합니다. 따라서 기존 포화/암부
+임계값은 8-bit 입력과 동일하게 유지됩니다. RGB 원본은 재평가용이며
+실제 Gray code/PSP 계산에는 촬영기에서 선택한 한 채널의 mono16 프레임만
+사용합니다.
+
 ## 명령줄 실행
 
 먼저 높이 미리보기만 만들 때의 예시는 다음과 같습니다.
@@ -248,7 +254,13 @@ python scripts/run_gui.py
 
 ## 디버거 실행 (개발용)
 
-프로젝트 루트의 `run_debugger.bat`를 실행하면 디버그 GUI가 열립니다. 처음 한 번만 필요한 Python 패키지를 `%LOCALAPPDATA%\PCB_FPP_Decoder\debugger_venv`에 설치하고, 이후에는 그 환경을 재사용합니다. 따라서 프로젝트 폴더에는 `.venv`나 `dist`가 생성되지 않습니다.
+프로젝트 루트의 `run_debugger.bat`를 실행하면 디버그 GUI가 열립니다. 처음 한 번만 필요한 Python 패키지를 `%LOCALAPPDATA%\PCB_FPP_Decoder\debugger_venv_py312`에 설치하고, 이후에는 그 환경을 재사용합니다. 따라서 프로젝트 폴더에는 `.venv`나 `dist`가 생성되지 않습니다.
+
+기본 Python을 지정해야 하는 환경에서는 실행 전에 `DEBUGGER_PYTHON` 환경 변수에 Python 실행 파일 경로를 지정할 수 있습니다.
+
+정리 도구 `scripts\clean_generated.py`는 기존 `dist` 실행 파일을 기본적으로 보존합니다. `dist`까지 삭제하려면 `--include-dist --execute`를 명시해야 합니다.
+
+현재 PC에서 디버거 EXE를 유지하거나 다시 만들려면 `build_debugger.bat`를 실행하세요. 이 스크립트는 `dist\PCB_FPP_Debugger\PCB_FPP_Debugger.exe`만 생성하며, 일반 GUI와 CLI 배포본은 만들지 않습니다.
 
 의존성을 갱신해야 할 때만 아래처럼 실행합니다.
 

@@ -48,7 +48,10 @@ def read_image_gray(
     """Read an image as single-channel float32, preserving Windows unicode paths."""
     try:
         with Image.open(path) as img:
-            if _effective_color_mode(color_mode) == "luminance" and crosstalk_matrix is None:
+            native = np.asarray(img)
+            if native.ndim == 2:
+                arr = _normalize_measurement_range(native)
+            elif _effective_color_mode(color_mode) == "luminance" and crosstalk_matrix is None:
                 arr = np.asarray(img.convert("L"), dtype=np.float32)
             else:
                 arr = rgb_to_intensity(
@@ -72,7 +75,7 @@ def read_image_gray(
             if img is None:
                 raise ValueError(f"cv2 could not decode image: {path}")
             if img.ndim == 2:
-                return img.astype(np.float32)
+                return _normalize_measurement_range(img)
             if img.ndim == 3:
                 channels = img.shape[2]
                 if channels < 3:
@@ -86,6 +89,14 @@ def read_image_gray(
             raise ValueError(f"unsupported image shape {img.shape}: {path}")
         except Exception as exc:
             raise ValueError(f"failed to read image {path}: {exc}") from exc
+
+
+def _normalize_measurement_range(image: np.ndarray) -> np.ndarray:
+    """Map integer mono images to the decoder's linear 0..255 threshold domain."""
+    arr = np.asarray(image)
+    if arr.dtype == np.uint16:
+        return (arr.astype(np.float32) * (255.0 / 65535.0)).astype(np.float32)
+    return arr.astype(np.float32)
 
 
 def rgb_to_intensity(
