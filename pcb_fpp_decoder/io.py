@@ -286,8 +286,8 @@ def _entry_file_with_priority(entry: dict[str, Any]) -> tuple[str | None, str]:
         if isinstance(value, str) and value:
             return value, "primary"
     for key in (
-        "received_image_filename",
         "received_image_relative_path",
+        "received_image_filename",
     ):
         value = entry.get(key)
         if isinstance(value, str) and value:
@@ -308,9 +308,9 @@ def map_patterns_from_scan_log(input_dir: Path) -> dict[int, Path]:
         if pattern_id is None or file_value is None:
             continue
 
-        candidate = Path(file_value)
-        if not candidate.is_absolute():
-            candidate = input_dir / candidate
+        candidate = _resolve_scan_log_image_path(input_dir, file_value)
+        if candidate is None:
+            continue
         if candidate.exists() and candidate.suffix.lower() in IMAGE_EXTENSIONS:
             if priority == "received":
                 received_mapping.setdefault(pattern_id, candidate)
@@ -319,6 +319,30 @@ def map_patterns_from_scan_log(input_dir: Path) -> dict[int, Path]:
     for pattern_id, candidate in received_mapping.items():
         mapping.setdefault(pattern_id, candidate)
     return mapping
+
+
+def _resolve_scan_log_image_path(input_dir: Path, file_value: str) -> Path | None:
+    candidate = Path(file_value)
+    if candidate.is_absolute():
+        return candidate
+
+    input_name = input_dir.name.lower()
+    parts_lower = tuple(part.lower() for part in candidate.parts)
+    starts_with_angle = bool(parts_lower) and re.fullmatch(
+        r"(?:angle|deg)_\d{1,3}",
+        parts_lower[0],
+    )
+
+    candidates = [input_dir / candidate]
+    if starts_with_angle:
+        if parts_lower[0] != input_name:
+            return None
+        candidates.append(input_dir.parent / candidate)
+
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]
 
 
 def has_decode_pattern_files(

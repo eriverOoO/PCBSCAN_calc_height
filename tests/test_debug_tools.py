@@ -41,7 +41,7 @@ def _write_synthetic_scan(folder: Path, width: int = 48, height: int = 32) -> No
         _save(folder / f"pattern_{pattern_id:03d}.png", image)
 
 
-def test_single_image_pattern_debug_writes_binary_pattern(tmp_path):
+def test_single_image_pattern_debug_writes_compact_artifacts(tmp_path):
     height, width = 72, 96
     y, x = np.indices((height, width))
     rgb = np.zeros((height, width, 3), dtype=np.uint8)
@@ -56,15 +56,16 @@ def test_single_image_pattern_debug_writes_binary_pattern(tmp_path):
     output_dir = tmp_path / "debug_single"
     steps = generate_single_image_pattern_debug(image_path, output_dir)
 
-    assert (output_dir / "debug_manifest.json").exists()
-    assert any(step.title == "Binary UV pattern" for step in steps)
-    assert (output_dir / "debug_steps" / "06_binary_uv_pattern.png").exists()
-    manifest = json.loads((output_dir / "debug_manifest.json").read_text(encoding="utf-8"))
-    assert manifest["metadata"]["mode"] == "single-image-pattern-extraction"
-    assert manifest["metadata"]["valid_pattern_pixel_ratio"] > 0
+    assert [step.title for step in steps] == ["Debug overview", "Final pattern overlay"]
+    assert (output_dir / "debug_overview.png").exists()
+    assert (output_dir / "final_result.png").exists()
+    assert not (output_dir / "debug_steps").exists()
+    report = json.loads((output_dir / "analysis_report.json").read_text(encoding="utf-8"))
+    assert report["metadata"]["mode"] == "single-image-pattern-extraction"
+    assert report["metadata"]["valid_pattern_pixel_ratio"] > 0
 
 
-def test_scan_debug_writes_height_step_manifest(tmp_path):
+def test_scan_debug_writes_compact_height_artifacts(tmp_path):
     input_dir = tmp_path / "capture" / "deg_0"
     output_dir = tmp_path / "processed" / "debug"
     _write_synthetic_scan(input_dir)
@@ -82,10 +83,11 @@ def test_scan_debug_writes_height_step_manifest(tmp_path):
         ),
     )
 
-    titles = {step.title for step in steps}
-    assert "Decode pipeline overview" in titles
-    assert "Height map" in titles
-    assert (output_dir / "debug_steps" / "single_15_height_map.png").exists()
-    manifest = json.loads((output_dir / "debug_manifest.json").read_text(encoding="utf-8"))
-    assert manifest["metadata"]["mode"] == "scan-sequence"
-    assert manifest["metadata"]["mask_coverage"]["combined_mask_ratio"] > 0.9
+    assert [step.title for step in steps] == ["Debug overview", "Final result"]
+    assert (output_dir / "debug_overview.png").exists()
+    assert (output_dir / "final_result.png").exists()
+    assert not (output_dir / "debug_steps").exists()
+    assert not (output_dir / "height").exists()
+    report = json.loads((output_dir / "analysis_report.json").read_text(encoding="utf-8"))
+    assert report["metadata"]["mode"] == "scan-sequence"
+    assert report["metadata"]["mask_coverage"]["combined_mask_ratio"] > 0.9

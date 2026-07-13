@@ -256,7 +256,8 @@ def _load_cv2():
 
 def _load_detection_image(path: Path) -> np.ndarray:
     cv2 = _load_cv2()
-    image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+    buffer = np.frombuffer(path.read_bytes(), dtype=np.uint8)
+    image = cv2.imdecode(buffer, cv2.IMREAD_UNCHANGED)
     if image is None:
         raise FileNotFoundError(f"Could not read marker detection image: {path}")
     if image.ndim == 3:

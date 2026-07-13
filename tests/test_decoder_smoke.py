@@ -8,7 +8,7 @@ from PIL import Image
 from pcb_fpp_decoder.aruco_marker import generate_marker_image
 from pcb_fpp_decoder.cli import build_parser, config_from_args, main as cli_main
 from pcb_fpp_decoder.decoder import DecodeConfig, PcbFppDecoder
-from pcb_fpp_decoder.io import rgb_to_intensity
+from pcb_fpp_decoder.io import has_decode_pattern_files, load_pattern_set, rgb_to_intensity
 
 
 def _save(path: Path, array: np.ndarray) -> None:
@@ -385,6 +385,81 @@ def test_phone_capture_metadata_is_reported(tmp_path):
     assert phone["manual"] is True
     assert phone["inverted_gray_count"] == 8
     assert phone["warnings"] == []
+
+
+def test_angle_folder_accepts_root_patterns_with_sidecar_capture_outputs(tmp_path):
+    scan_root = tmp_path / "captures" / "scan_phone"
+    input_dir = scan_root / "angle_000"
+    _write_synthetic_scan(input_dir, inverted_gray=True)
+    (input_dir / "exposures").mkdir()
+    (input_dir / "hdr_masks").mkdir()
+    (input_dir / "hdr_merge_report.json").write_text("{}", encoding="utf-8")
+    log = {
+        "scan_id": "scan_phone",
+        "decode_folders": [str(input_dir), str(scan_root / "angle_180")],
+        "pattern_order": [
+            {"pattern_id": pattern_id, "label": f"Pattern{pattern_id}", "filename": f"{pattern_id:02d}.bmp"}
+            for pattern_id in range(22)
+        ],
+        "patterns": [
+            {
+                "pattern_id": pattern_id,
+                "label": f"Pattern{pattern_id}",
+                "filename": f"pattern_{pattern_id:03d}.png",
+                "captures": [
+                    {
+                        "filename": f"exposures/pattern_{pattern_id:03d}/single.png",
+                        "exposure_us": 10000,
+                    }
+                ],
+            }
+            for pattern_id in range(22)
+        ],
+    }
+    (input_dir / "scan_log.json").write_text(json.dumps(log), encoding="utf-8")
+
+    assert has_decode_pattern_files(input_dir)
+    patterns = load_pattern_set(input_dir, optional_ids=range(14, 22))
+
+    assert sorted(patterns.files) == list(range(22))
+    assert patterns.files[0] == input_dir / "pattern_000.png"
+
+
+def test_angle_folder_scan_log_resolves_scan_root_relative_received_paths(tmp_path):
+    scan_root = tmp_path / "captures" / "scan_phone"
+    input_dir = scan_root / "angle_000"
+    source_dir = tmp_path / "source"
+    _write_synthetic_scan(source_dir, inverted_gray=True)
+    for pattern_id in range(22):
+        exposure_dir = input_dir / "exposures" / f"pattern_{pattern_id:03d}"
+        exposure_dir.mkdir(parents=True, exist_ok=True)
+        Image.open(source_dir / f"pattern_{pattern_id:03d}.png").save(exposure_dir / "single.png")
+    log = {
+        "scan_id": "scan_phone",
+        "rows": [
+            {
+                "angle_deg": 0,
+                "pattern_id": pattern_id,
+                "received_image_relative_path": f"angle_000/exposures/pattern_{pattern_id:03d}/single.png",
+            }
+            for pattern_id in range(22)
+        ]
+        + [
+            {
+                "angle_deg": 180,
+                "pattern_id": pattern_id,
+                "received_image_relative_path": f"angle_180/exposures/pattern_{pattern_id:03d}/single.png",
+            }
+            for pattern_id in range(22)
+        ],
+    }
+    (input_dir / "scan_log.json").write_text(json.dumps(log), encoding="utf-8")
+
+    assert has_decode_pattern_files(input_dir)
+    patterns = load_pattern_set(input_dir, optional_ids=range(14, 22))
+
+    assert sorted(patterns.files) == list(range(22))
+    assert patterns.files[0] == input_dir / "exposures" / "pattern_000" / "single.png"
 
 
 def test_smartphone_uv_rgb_scan_uses_blue_channel_by_default(tmp_path):
