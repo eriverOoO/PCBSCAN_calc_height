@@ -146,21 +146,21 @@ python scripts/decode_scan.py \
 
 로테이션 스테이지가 정확히 180.00도 회전하지 않는 경우에는 PCB에 붙인 ArUco 마커를 이용해 `deg_180` 영상을 `deg_0` 좌표계로 보정할 수 있습니다. 마커 이미지는 저장소에 포함하지 않고, 필요할 때 다음 명령으로 다시 생성합니다.
 
-현재 기본 실행값은 스테이지 ArUco 마커를 사용하는 쪽입니다. 0/180 통합에서는 `--fusion-registration aruco`가 기본이고, 단일 디코딩에서도 `--analysis-roi aruco`, `--analysis-aruco-layout stage-cross`, 마커 반경 `30 mm`, 스테이지 지름 `105 mm`, PCB `30 x 30 mm`가 기본입니다. 마커가 없는 과거 촬영 데이터를 처리할 때만 `--analysis-roi none` 또는 `--fusion-registration rotation-180`을 명시하세요.
+현재 기본 실행값은 스테이지 ArUco 마커를 사용하는 쪽입니다. 0/180 통합에서는 `--fusion-registration aruco`가 기본이고, 단일 디코딩에서도 `--analysis-roi aruco`, `--analysis-aruco-layout stage-cross`, 마커 반경 `42 mm`, 스테이지 지름 `105 mm`, PCB `30 x 30 mm`가 기본입니다. 마커가 없는 과거 촬영 데이터를 처리할 때만 `--analysis-roi none` 또는 `--fusion-registration rotation-180`을 명시하세요.
 
-스테이지 원판 전체에 붙일 때는 실제 스테이지에 맞는 레이아웃을 생성해 사용합니다. 아래 명령은 지름 105 mm 원판 안에 ID 0, 1, 2, 3 마커를 위/오른쪽/아래/왼쪽 순서로 배치합니다. 각 마커 중심은 원판 중심에서 30 mm 떨어지고, 흰 여백 포함 전체 마커 크기는 약 15 mm입니다.
+스테이지 원판 전체에 붙일 때는 실제 스테이지에 맞는 레이아웃을 생성해 사용합니다. 아래 명령은 지름 105 mm 원판 안에 ID 0, 1, 2, 3 마커를 위/오른쪽/아래/왼쪽 순서로 배치합니다. 각 마커 중심은 원판 중심에서 42 mm 떨어지고, 흰 여백 포함 전체 마커 크기는 약 15 mm입니다.
 
 ```powershell
 .venv\Scripts\python.exe scripts\generate_aruco_stage_layout.py `
   --ids 0,1,2,3 `
   --dictionary DICT_4X4_50 `
   --stage-diameter-mm 105 `
-  --marker-radius-mm 30 `
+  --marker-radius-mm 42 `
   --marker-total-mm 15 `
   --quiet-zone-mm 1.8 `
   --dpi 300 `
   --output aruco_markers_stage_layout `
-  --prefix aruco_stage_d105_r30_total15
+  --prefix aruco_stage_d105_r42_total15
 ```
 
 인쇄할 때는 프린터 배율을 `실제 크기` 또는 `100%`로 두고, `용지에 맞춤` 옵션은 끄세요. A4 PDF로 출력한 뒤 원형 외곽선을 따라 잘라 원판 중심과 십자 표시를 맞춰 붙입니다. 생성된 `aruco_markers*`와 `markers` 폴더는 `.gitignore`에 포함되어 있으므로 출력물은 Git에 추가하지 않습니다.
@@ -176,7 +176,7 @@ python scripts/decode_scan.py \
   --analysis-roi aruco `
   --analysis-aruco-layout stage-cross `
   --analysis-aruco-ids 0,1,2,3 `
-  --analysis-marker-center-radius-mm 30 `
+  --analysis-marker-center-radius-mm 42 `
   --analysis-stage-diameter-mm 105 `
   --pcb-width-mm 30 `
   --pcb-height-mm 30 `

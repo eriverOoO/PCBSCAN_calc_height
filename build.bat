@@ -11,6 +11,7 @@ set "CLI_NAME=PCB_FPP_Decoder_CLI"
 set "DEBUG_NAME=PCB_FPP_Debugger"
 set "BUILD_DIR=%TEMP%\PCB_FPP_Decoder_pyinstaller_%RANDOM%"
 set "DIST_DIR=dist"
+set "BUNDLED_PY=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
 
 echo.
 echo PCB FPP Decoder EXE build
@@ -19,11 +20,20 @@ echo.
 
 echo [1/4] Preparing Python virtual environment...
 if not exist "%PYTHON_EXE%" (
-    where py >nul 2>nul
-    if not errorlevel 1 (
-        py -3 -m venv "%VENV_DIR%"
+    if exist "%VENV_DIR%" (
+        echo Existing .venv is not a Windows venv; recreating it...
+        rmdir /s /q "%VENV_DIR%"
+        if errorlevel 1 goto :venv_error
+    )
+    if exist "%BUNDLED_PY%" (
+        "%BUNDLED_PY%" -m venv "%VENV_DIR%"
     ) else (
+        where py >nul 2>nul
+        if not errorlevel 1 (
+        py -3 -m venv "%VENV_DIR%"
+        ) else (
         python -m venv "%VENV_DIR%"
+        )
     )
     if errorlevel 1 goto :venv_error
 )

@@ -234,7 +234,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--analysis-marker-center-radius-mm",
         type=float,
-        default=30.0,
+        default=42.0,
         help="For --analysis-aruco-layout stage-cross, marker center radius from stage center",
     )
     parser.add_argument(

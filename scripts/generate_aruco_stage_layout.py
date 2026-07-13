@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, JpegImagePlugin  # noqa: F401
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -21,12 +21,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ids", default="0,1,2,3", help="Marker IDs for top,right,bottom,left")
     parser.add_argument("--dictionary", default="DICT_4X4_50")
     parser.add_argument("--stage-diameter-mm", type=float, default=105.0)
-    parser.add_argument("--marker-radius-mm", type=float, default=30.0)
+    parser.add_argument("--marker-radius-mm", type=float, default=42.0)
     parser.add_argument("--marker-total-mm", type=float, default=15.0)
     parser.add_argument("--quiet-zone-mm", type=float, default=1.8)
     parser.add_argument("--dpi", type=int, default=300)
     parser.add_argument("--output", type=Path, default=Path("aruco_markers_stage_layout"))
-    parser.add_argument("--prefix", default="aruco_stage_d105_r30_total15")
+    parser.add_argument("--prefix", default="aruco_stage_d105_r42_total15")
     return parser
 
 

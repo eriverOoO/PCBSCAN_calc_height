@@ -357,7 +357,7 @@ def test_cli_defaults_use_stage_aruco_settings(tmp_path):
     assert config.output_profile == "compact"
     assert config.analysis_roi_mode == "aruco"
     assert config.analysis_aruco_layout == "stage-cross"
-    assert config.analysis_marker_center_radius_mm == 30.0
+    assert config.analysis_marker_center_radius_mm == 42.0
     assert config.analysis_stage_diameter_mm == 105.0
     assert config.pcb_width_mm == 30.0
     assert config.pcb_height_mm == 30.0

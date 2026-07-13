@@ -417,7 +417,7 @@ class DecoderGui:
         self.analysis_aruco_ids_var = StringVar(value="0,1,2,3")
         self.analysis_aruco_layout_var = StringVar(value="stage-cross")
         self.analysis_workspace_size_var = StringVar()
-        self.analysis_marker_radius_var = StringVar(value="30")
+        self.analysis_marker_radius_var = StringVar(value="42")
         self.analysis_stage_diameter_var = StringVar(value="105")
         self.pcb_size_var = StringVar(value="30,30")
         self.pcb_margin_var = StringVar(value="0")
