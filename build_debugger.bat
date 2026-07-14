@@ -38,7 +38,7 @@ if errorlevel 1 goto :build_error
 set /p "PY_BASE="<"%PY_BASE_FILE%"
 if not defined PY_BASE goto :build_error
 
-set "PYI_TK=--hidden-import tkinter --hidden-import tkinter.filedialog --hidden-import tkinter.font --hidden-import tkinter.messagebox --hidden-import tkinter.simpledialog --hidden-import tkinter.ttk --hidden-import tkinter.scrolledtext --add-binary %PY_BASE%\DLLs\_tkinter.pyd;. --add-binary %PY_BASE%\DLLs\tcl86t.dll;. --add-binary %PY_BASE%\DLLs\tk86t.dll;. --add-data %PY_BASE%\Lib\tkinter;tkinter --add-data %PY_BASE%\tcl\tcl8.6;_tcl_data --add-data %PY_BASE%\tcl\tk8.6;_tk_data --add-data %PY_BASE%\tcl\tcl8.6;lib\tcl8.6 --add-data %PY_BASE%\tcl\tk8.6;lib\tk8.6"
+set "PYI_TK=--hidden-import tkinter --hidden-import tkinter.filedialog --hidden-import tkinter.font --hidden-import tkinter.messagebox --hidden-import tkinter.simpledialog --hidden-import tkinter.ttk --hidden-import tkinter.scrolledtext --add-binary="%PY_BASE%\DLLs\_tkinter.pyd;." --add-binary="%PY_BASE%\DLLs\tcl86t.dll;." --add-binary="%PY_BASE%\DLLs\tk86t.dll;." --add-data="%PY_BASE%\Lib\tkinter;tkinter" --add-data="%PY_BASE%\tcl\tcl8.6;_tcl_data" --add-data="%PY_BASE%\tcl\tk8.6;_tk_data" --add-data="%PY_BASE%\tcl\tcl8.6;lib\tcl8.6" --add-data="%PY_BASE%\tcl\tk8.6;lib\tk8.6""
 set "PYI_COMMON=--noconfirm --onedir --distpath %DIST_DIR% --workpath %BUILD_DIR% --specpath %BUILD_DIR% --collect-data matplotlib --hidden-import matplotlib.backends.backend_agg --hidden-import mpl_toolkits.mplot3d --hidden-import scipy.ndimage --hidden-import PIL.Image --hidden-import PIL.ImageTk --hidden-import cv2 %PYI_TK% --exclude-module=pytest --exclude-module=matplotlib.tests --exclude-module=scipy.tests"
 
 echo Building debugger executable only...
