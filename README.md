@@ -398,10 +398,13 @@ processed/<scan_id>/deg_0/
   point_cloud/
     point_cloud.ply
     point_cloud_preview.png
+  capture_diagnosis.txt
   decode_report.json
 ```
 
 `decode_report.json`에는 `optical_setup` 항목이 기록됩니다. 여기서 기준 위상 차감 사용 여부, 기준 데이터 경로, `height/delta_phase.npy` 저장 여부, 위치별 보정 맵 로딩 여부를 확인할 수 있습니다.
+
+디코딩이 끝나면 출력 폴더의 `capture_diagnosis.txt`도 확인하세요. 이 메모는 White/Black 밝기와 대비, 과노출·암부 비율, Gray confidence, sine modulation, 최종 유효 픽셀 비율을 간단히 정리하고 노출·ISO·프로젝터 밝기·초점·반사각 중 무엇을 먼저 조정할지 제안합니다. ArUco 분석 ROI를 사용한 경우 PCB 영역 안의 픽셀만 집계합니다. 진단은 원인을 확정하는 기능이 아니라 현재 수치에 따른 촬영 점검 우선순위입니다.
 
 ## 높이 해석
 

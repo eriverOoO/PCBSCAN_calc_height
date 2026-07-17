@@ -901,6 +901,7 @@ class DecoderGui:
                 "완료.\n"
                 f"출력 폴더: {output_dir}\n"
                 f"{ratio_label}: {ratio:.3f}\n"
+                f"촬영 진단: {output_dir / 'capture_diagnosis.txt'}\n"
                 f"높이 히트맵: {output_dir / 'height' / 'height_heatmap.png'}\n"
                 f"포인트 클라우드: {output_dir / 'point_cloud' / 'point_cloud.ply'}\n"
                 f"3D 미리보기: {output_dir / 'point_cloud' / 'point_cloud_preview.png'}\n"

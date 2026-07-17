@@ -17,6 +17,7 @@ from .calibration import (
     structured_light_calibration_report,
     triangulation_height,
 )
+from .diagnostics import write_capture_diagnosis, write_fusion_diagnosis
 from .graycode import decode_gray_bits
 from .io import PatternSet, load_pattern_set, resolve_decode_input_dir, save_float01_png
 from .phase import (
@@ -775,6 +776,8 @@ class PcbFppDecoder:
             }
         result.report["output"] = {"profile": self.config.output_profile}
 
+        write_capture_diagnosis(result, output_dir)
+
         with (output_dir / "decode_report.json").open("w", encoding="utf-8") as f:
             json.dump(result.report, f, indent=2, ensure_ascii=False)
 
@@ -872,6 +875,8 @@ class PcbFppDecoder:
                 "max_point_cloud_points": self.config.max_point_cloud_points,
             }
         fusion.report["output"] = {"profile": self.config.output_profile}
+
+        write_fusion_diagnosis(fusion, output_dir)
 
         with (output_dir / "decode_report.json").open("w", encoding="utf-8") as f:
             json.dump(fusion.report, f, indent=2, ensure_ascii=False)

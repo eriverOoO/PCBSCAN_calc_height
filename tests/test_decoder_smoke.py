@@ -166,6 +166,12 @@ def test_synthetic_scan_end_to_end(tmp_path):
     result = PcbFppDecoder(config).decode(input_dir, output_dir)
 
     assert (output_dir / "decode_report.json").exists()
+    diagnosis_path = output_dir / "capture_diagnosis.txt"
+    assert diagnosis_path.exists()
+    diagnosis = diagnosis_path.read_text(encoding="utf-8-sig")
+    assert "판정: 양호" in diagnosis
+    assert "White-Black 신호" in diagnosis
+    assert "권장 조치" in diagnosis
     assert (output_dir / "phase" / "absolute_phase.npy").exists()
     assert (output_dir / "height" / "height_relative.npy").exists()
     assert (output_dir / "point_cloud" / "point_cloud.ply").exists()
@@ -627,6 +633,10 @@ def test_fused_0_180_scan_fills_shadow_region(tmp_path):
     assert (output_dir / "height" / "height_fused.npy").exists()
     assert (output_dir / "views" / "deg_0" / "decode_report.json").exists()
     assert (output_dir / "views" / "deg_180" / "decode_report.json").exists()
+    diagnosis = (output_dir / "capture_diagnosis.txt").read_text(encoding="utf-8-sig")
+    assert "0/180 촬영 자동 진단" in diagnosis
+    assert "0도:" in diagnosis
+    assert "180도:" in diagnosis
     assert np.count_nonzero(result.source_map == 2) > 0
     assert result.report["fusion"]["coverage"]["fused_valid_ratio"] > (
         result.deg0.report["mask_coverage"]["combined_mask_ratio"]
