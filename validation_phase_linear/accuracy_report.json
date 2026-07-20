@@ -1,0 +1,1363 @@
+{
+  "schema_version": 1,
+  "metric": true,
+  "units": "mm",
+  "ground_truth_usage": "post-decode accuracy evaluation only",
+  "regions": {
+    "overall_pcb": {
+      "pixel_count": 765625,
+      "valid_pixel_count": 761754,
+      "valid_ratio": 0.994944,
+      "bias_mm": -0.0021135706920176744,
+      "mae_mm": 0.00655998894944787,
+      "rmse_mm": 0.04874955862760544,
+      "median_absolute_error_mm": 0.000512146798428148,
+      "p95_absolute_error_mm": 0.009378599934279919,
+      "max_absolute_error_mm": 2.8914780616760254
+    },
+    "flat_substrate": {
+      "pixel_count": 627147,
+      "valid_pixel_count": 624064,
+      "valid_ratio": 0.9950840871438434,
+      "bias_mm": 0.0005051162443123758,
+      "mae_mm": 0.0005052046617493033,
+      "rmse_mm": 0.0007031376590020955,
+      "median_absolute_error_mm": 0.000503316696267575,
+      "p95_absolute_error_mm": 0.000567089591640979,
+      "max_absolute_error_mm": 0.2708139717578888
+    },
+    "components": {
+      "pixel_count": 138478,
+      "valid_pixel_count": 137690,
+      "valid_ratio": 0.9943095654183336,
+      "bias_mm": -0.013982465490698814,
+      "mae_mm": 0.03400259464979172,
+      "rmse_mm": 0.11465416848659515,
+      "median_absolute_error_mm": 0.004323899745941162,
+      "p95_absolute_error_mm": 0.15148115158081055,
+      "max_absolute_error_mm": 2.8914780616760254
+    },
+    "components_ge_1mm": {
+      "pixel_count": 111244,
+      "valid_pixel_count": 110478,
+      "valid_ratio": 0.9931142353744921,
+      "bias_mm": -0.012625332921743393,
+      "mae_mm": 0.03717128187417984,
+      "rmse_mm": 0.1220233291387558,
+      "median_absolute_error_mm": 0.004939436912536621,
+      "p95_absolute_error_mm": 0.15248894691467285,
+      "max_absolute_error_mm": 2.8914780616760254
+    }
+  },
+  "phase_height_regression": {
+    "correlation": 0.996953220295142,
+    "slope_phase_per_mm": 23.01803039292197,
+    "offset_phase": 0.030845022718390163
+  },
+  "ground_truth_0_180_consistency": {
+    "max_absolute_difference_mm": 0.0,
+    "mean_absolute_difference_mm": 0.0
+  },
+  "fusion": {
+    "mode": "modulation-weighted",
+    "transform_kind": "rotation_180",
+    "transform_matrix": [
+      [
+        -1.0,
+        0.0,
+        1935.0
+      ],
+      [
+        0.0,
+        -1.0,
+        1215.0
+      ]
+    ],
+    "max_height_difference_mm": 0.25,
+    "inconsistent_policy": "higher-confidence",
+    "cycle_slip_ratio": 0.002158717105263158,
+    "rejection_ratio": 0.0071655645117442365,
+    "coverage": {
+      "deg_0_only_ratio": 0.02558899589495433,
+      "deg_180_only_ratio": 0.025140006524575903,
+      "overlap_ratio": 0.2728466350859069,
+      "fused_valid_ratio": 0.32357563750543716,
+      "missing_ratio": 0.6764243624945628
+    }
+  },
+  "phase_diagnostics": {
+    "deg_0": {
+      "method": "cosine_quadrature_first_and_center_rows",
+      "sample_rows": [
+        0,
+        608
+      ],
+      "scores": {
+        "default": -0.010071263299323618,
+        "negated": -8.86698403590458e-09,
+        "swapped": 1.0
+      },
+      "row_scores": {
+        "default": {
+          "0": -0.01707843504846096,
+          "608": -0.0030640915501862764
+        },
+        "negated": {
+          "0": -1.1903265928481233e-08,
+          "608": -5.830702143327926e-09
+        },
+        "swapped": {
+          "0": 1.0,
+          "608": 1.0
+        }
+      },
+      "recommended": "swapped"
+    },
+    "deg_180": {
+      "method": "cosine_quadrature_first_and_center_rows",
+      "sample_rows": [
+        0,
+        608
+      ],
+      "scores": {
+        "default": 0.007701033202465624,
+        "negated": -8.33251867504714e-09,
+        "swapped": 1.0
+      },
+      "row_scores": {
+        "default": {
+          "0": -0.0013413290726020932,
+          "608": 0.01674339547753334
+        },
+        "negated": {
+          "0": -1.072325073181446e-08,
+          "608": -5.941786618279821e-09
+        },
+        "swapped": {
+          "0": 1.0,
+          "608": 1.0
+        }
+      },
+      "recommended": "swapped"
+    }
+  },
+  "thresholds": {
+    "min_signal": 5.0,
+    "min_signal_mode": "manual",
+    "selection_reason": "synthetic validation preset from calibration JSON",
+    "deg_0_valid_ratio": 0.30332991246193997,
+    "deg_180_valid_ratio": 0.30299603767942584
+  },
+  "manifests": {
+    "object": {
+      "path": "C:\\Users\\LEELAB\\Desktop\\PRO4500_CONTROL_ximea\\synthetic_pcb_structured_light\\output\\manifest.json",
+      "scene_type": "object",
+      "bit_depth": 16,
+      "camera": {
+        "width": 1936,
+        "height": 1216,
+        "focal_length_mm": 35.0,
+        "pixel_size_um": 5.86,
+        "working_distance_mm": 220.0,
+        "tilt_deg": 0.0,
+        "distortion": {
+          "enabled": false,
+          "k1": 0.0,
+          "k2": 0.0
+        }
+      },
+      "projector": {
+        "width": 912,
+        "height": 1140,
+        "angle_deg": 30.0,
+        "distance_mm": 220.0,
+        "blur_sigma_px": 0.8,
+        "intensity": 0.75
+      },
+      "angles": [
+        0,
+        180
+      ],
+      "frame_count": 44,
+      "frame_mapping": [
+        {
+          "angle_deg": 0,
+          "pattern_index": 0,
+          "label": "White",
+          "source_pattern": "00_White.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_000.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 1,
+          "label": "Black",
+          "source_pattern": "01_Black.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_001.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 2,
+          "label": "Gray0",
+          "source_pattern": "02_Gray0.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_002.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 3,
+          "label": "Gray1",
+          "source_pattern": "03_Gray1.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_003.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 4,
+          "label": "Gray2",
+          "source_pattern": "04_Gray2.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_004.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 5,
+          "label": "Gray3",
+          "source_pattern": "05_Gray3.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_005.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 6,
+          "label": "Gray4",
+          "source_pattern": "06_Gray4.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_006.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 7,
+          "label": "Gray5",
+          "source_pattern": "07_Gray5.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_007.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 8,
+          "label": "Gray6",
+          "source_pattern": "08_Gray6.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_008.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 9,
+          "label": "Gray7",
+          "source_pattern": "09_Gray7.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_009.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 10,
+          "label": "Sine_000",
+          "source_pattern": "10_Sine_000.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_010.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 11,
+          "label": "Sine_090",
+          "source_pattern": "11_Sine_090.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_011.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 12,
+          "label": "Sine_180",
+          "source_pattern": "12_Sine_180.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_012.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 13,
+          "label": "Sine_270",
+          "source_pattern": "13_Sine_270.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_013.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 14,
+          "label": "Gray0_inv",
+          "source_pattern": "02_Gray0.bmp",
+          "inverse": true,
+          "filename": "angle_000/pattern_014.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 15,
+          "label": "Gray1_inv",
+          "source_pattern": "03_Gray1.bmp",
+          "inverse": true,
+          "filename": "angle_000/pattern_015.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 16,
+          "label": "Gray2_inv",
+          "source_pattern": "04_Gray2.bmp",
+          "inverse": true,
+          "filename": "angle_000/pattern_016.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 17,
+          "label": "Gray3_inv",
+          "source_pattern": "05_Gray3.bmp",
+          "inverse": true,
+          "filename": "angle_000/pattern_017.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 18,
+          "label": "Gray4_inv",
+          "source_pattern": "06_Gray4.bmp",
+          "inverse": true,
+          "filename": "angle_000/pattern_018.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 19,
+          "label": "Gray5_inv",
+          "source_pattern": "07_Gray5.bmp",
+          "inverse": true,
+          "filename": "angle_000/pattern_019.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 20,
+          "label": "Gray6_inv",
+          "source_pattern": "08_Gray6.bmp",
+          "inverse": true,
+          "filename": "angle_000/pattern_020.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 21,
+          "label": "Gray7_inv",
+          "source_pattern": "09_Gray7.bmp",
+          "inverse": true,
+          "filename": "angle_000/pattern_021.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 0,
+          "label": "White",
+          "source_pattern": "00_White.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_000.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 1,
+          "label": "Black",
+          "source_pattern": "01_Black.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_001.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 2,
+          "label": "Gray0",
+          "source_pattern": "02_Gray0.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_002.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 3,
+          "label": "Gray1",
+          "source_pattern": "03_Gray1.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_003.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 4,
+          "label": "Gray2",
+          "source_pattern": "04_Gray2.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_004.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 5,
+          "label": "Gray3",
+          "source_pattern": "05_Gray3.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_005.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 6,
+          "label": "Gray4",
+          "source_pattern": "06_Gray4.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_006.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 7,
+          "label": "Gray5",
+          "source_pattern": "07_Gray5.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_007.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 8,
+          "label": "Gray6",
+          "source_pattern": "08_Gray6.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_008.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 9,
+          "label": "Gray7",
+          "source_pattern": "09_Gray7.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_009.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 10,
+          "label": "Sine_000",
+          "source_pattern": "10_Sine_000.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_010.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 11,
+          "label": "Sine_090",
+          "source_pattern": "11_Sine_090.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_011.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 12,
+          "label": "Sine_180",
+          "source_pattern": "12_Sine_180.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_012.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 13,
+          "label": "Sine_270",
+          "source_pattern": "13_Sine_270.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_013.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 14,
+          "label": "Gray0_inv",
+          "source_pattern": "02_Gray0.bmp",
+          "inverse": true,
+          "filename": "angle_180/pattern_014.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 15,
+          "label": "Gray1_inv",
+          "source_pattern": "03_Gray1.bmp",
+          "inverse": true,
+          "filename": "angle_180/pattern_015.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 16,
+          "label": "Gray2_inv",
+          "source_pattern": "04_Gray2.bmp",
+          "inverse": true,
+          "filename": "angle_180/pattern_016.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 17,
+          "label": "Gray3_inv",
+          "source_pattern": "05_Gray3.bmp",
+          "inverse": true,
+          "filename": "angle_180/pattern_017.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 18,
+          "label": "Gray4_inv",
+          "source_pattern": "06_Gray4.bmp",
+          "inverse": true,
+          "filename": "angle_180/pattern_018.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 19,
+          "label": "Gray5_inv",
+          "source_pattern": "07_Gray5.bmp",
+          "inverse": true,
+          "filename": "angle_180/pattern_019.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 20,
+          "label": "Gray6_inv",
+          "source_pattern": "08_Gray6.bmp",
+          "inverse": true,
+          "filename": "angle_180/pattern_020.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 21,
+          "label": "Gray7_inv",
+          "source_pattern": "09_Gray7.bmp",
+          "inverse": true,
+          "filename": "angle_180/pattern_021.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        }
+      ]
+    },
+    "reference": {
+      "path": "C:\\Users\\LEELAB\\Desktop\\PRO4500_CONTROL_ximea\\synthetic_pcb_structured_light\\output\\reference\\manifest.json",
+      "scene_type": "empty_stage_reference",
+      "bit_depth": 16,
+      "camera": {
+        "width": 1936,
+        "height": 1216,
+        "focal_length_mm": 35.0,
+        "pixel_size_um": 5.86,
+        "working_distance_mm": 220.0,
+        "tilt_deg": 0.0,
+        "distortion": {
+          "enabled": false,
+          "k1": 0.0,
+          "k2": 0.0
+        }
+      },
+      "projector": {
+        "width": 912,
+        "height": 1140,
+        "angle_deg": 30.0,
+        "distance_mm": 220.0,
+        "blur_sigma_px": 0.8,
+        "intensity": 0.75
+      },
+      "angles": [
+        0,
+        180
+      ],
+      "frame_count": 44,
+      "frame_mapping": [
+        {
+          "angle_deg": 0,
+          "pattern_index": 0,
+          "label": "White",
+          "source_pattern": "00_White.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_000.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 1,
+          "label": "Black",
+          "source_pattern": "01_Black.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_001.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 2,
+          "label": "Gray0",
+          "source_pattern": "02_Gray0.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_002.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 3,
+          "label": "Gray1",
+          "source_pattern": "03_Gray1.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_003.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 4,
+          "label": "Gray2",
+          "source_pattern": "04_Gray2.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_004.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 5,
+          "label": "Gray3",
+          "source_pattern": "05_Gray3.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_005.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 6,
+          "label": "Gray4",
+          "source_pattern": "06_Gray4.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_006.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 7,
+          "label": "Gray5",
+          "source_pattern": "07_Gray5.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_007.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 8,
+          "label": "Gray6",
+          "source_pattern": "08_Gray6.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_008.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 9,
+          "label": "Gray7",
+          "source_pattern": "09_Gray7.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_009.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 10,
+          "label": "Sine_000",
+          "source_pattern": "10_Sine_000.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_010.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 11,
+          "label": "Sine_090",
+          "source_pattern": "11_Sine_090.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_011.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 12,
+          "label": "Sine_180",
+          "source_pattern": "12_Sine_180.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_012.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 13,
+          "label": "Sine_270",
+          "source_pattern": "13_Sine_270.bmp",
+          "inverse": false,
+          "filename": "angle_000/pattern_013.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 14,
+          "label": "Gray0_inv",
+          "source_pattern": "02_Gray0.bmp",
+          "inverse": true,
+          "filename": "angle_000/pattern_014.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 15,
+          "label": "Gray1_inv",
+          "source_pattern": "03_Gray1.bmp",
+          "inverse": true,
+          "filename": "angle_000/pattern_015.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 16,
+          "label": "Gray2_inv",
+          "source_pattern": "04_Gray2.bmp",
+          "inverse": true,
+          "filename": "angle_000/pattern_016.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 17,
+          "label": "Gray3_inv",
+          "source_pattern": "05_Gray3.bmp",
+          "inverse": true,
+          "filename": "angle_000/pattern_017.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 18,
+          "label": "Gray4_inv",
+          "source_pattern": "06_Gray4.bmp",
+          "inverse": true,
+          "filename": "angle_000/pattern_018.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 19,
+          "label": "Gray5_inv",
+          "source_pattern": "07_Gray5.bmp",
+          "inverse": true,
+          "filename": "angle_000/pattern_019.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 20,
+          "label": "Gray6_inv",
+          "source_pattern": "08_Gray6.bmp",
+          "inverse": true,
+          "filename": "angle_000/pattern_020.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 0,
+          "pattern_index": 21,
+          "label": "Gray7_inv",
+          "source_pattern": "09_Gray7.bmp",
+          "inverse": true,
+          "filename": "angle_000/pattern_021.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 0,
+          "label": "White",
+          "source_pattern": "00_White.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_000.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 1,
+          "label": "Black",
+          "source_pattern": "01_Black.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_001.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 2,
+          "label": "Gray0",
+          "source_pattern": "02_Gray0.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_002.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 3,
+          "label": "Gray1",
+          "source_pattern": "03_Gray1.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_003.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 4,
+          "label": "Gray2",
+          "source_pattern": "04_Gray2.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_004.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 5,
+          "label": "Gray3",
+          "source_pattern": "05_Gray3.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_005.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 6,
+          "label": "Gray4",
+          "source_pattern": "06_Gray4.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_006.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 7,
+          "label": "Gray5",
+          "source_pattern": "07_Gray5.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_007.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 8,
+          "label": "Gray6",
+          "source_pattern": "08_Gray6.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_008.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 9,
+          "label": "Gray7",
+          "source_pattern": "09_Gray7.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_009.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 10,
+          "label": "Sine_000",
+          "source_pattern": "10_Sine_000.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_010.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 11,
+          "label": "Sine_090",
+          "source_pattern": "11_Sine_090.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_011.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 12,
+          "label": "Sine_180",
+          "source_pattern": "12_Sine_180.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_012.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 13,
+          "label": "Sine_270",
+          "source_pattern": "13_Sine_270.bmp",
+          "inverse": false,
+          "filename": "angle_180/pattern_013.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 14,
+          "label": "Gray0_inv",
+          "source_pattern": "02_Gray0.bmp",
+          "inverse": true,
+          "filename": "angle_180/pattern_014.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 15,
+          "label": "Gray1_inv",
+          "source_pattern": "03_Gray1.bmp",
+          "inverse": true,
+          "filename": "angle_180/pattern_015.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 16,
+          "label": "Gray2_inv",
+          "source_pattern": "04_Gray2.bmp",
+          "inverse": true,
+          "filename": "angle_180/pattern_016.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 17,
+          "label": "Gray3_inv",
+          "source_pattern": "05_Gray3.bmp",
+          "inverse": true,
+          "filename": "angle_180/pattern_017.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 18,
+          "label": "Gray4_inv",
+          "source_pattern": "06_Gray4.bmp",
+          "inverse": true,
+          "filename": "angle_180/pattern_018.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 19,
+          "label": "Gray5_inv",
+          "source_pattern": "07_Gray5.bmp",
+          "inverse": true,
+          "filename": "angle_180/pattern_019.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 20,
+          "label": "Gray6_inv",
+          "source_pattern": "08_Gray6.bmp",
+          "inverse": true,
+          "filename": "angle_180/pattern_020.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        },
+        {
+          "angle_deg": 180,
+          "pattern_index": 21,
+          "label": "Gray7_inv",
+          "source_pattern": "09_Gray7.bmp",
+          "inverse": true,
+          "filename": "angle_180/pattern_021.png",
+          "dtype": "uint16",
+          "shape": [
+            1216,
+            1936
+          ]
+        }
+      ]
+    }
+  }
+}

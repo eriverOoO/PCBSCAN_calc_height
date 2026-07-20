@@ -3,9 +3,32 @@ import pytest
 
 from pcb_fpp_decoder.calibration import (
     Calibration,
+    phase_linear_height,
     structured_light_calibration_report,
     triangulation_height,
 )
+
+
+def test_phase_linear_height_uses_nested_calibration_sign_offset_and_scale():
+    calibration = Calibration(
+        data={
+            "phase_linear": {
+                "phase_per_mm": 20.0,
+                "offset_phase": -0.1,
+                "height_sign": -1.0,
+            }
+        }
+    )
+    delta = np.array([[-0.1, -20.1, -40.1]], dtype=np.float32)
+
+    height, parameters = phase_linear_height(delta, calibration)
+
+    np.testing.assert_allclose(height, [[0.01, 1.01, 2.01]], atol=1e-6)
+    assert parameters == {
+        "phase_per_mm": 20.0,
+        "offset_phase": -0.1,
+        "height_sign": -1.0,
+    }
 
 
 def test_triangulation_accepts_position_dependent_npz_maps():
