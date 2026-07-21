@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "validation_level": "L1",
+  "profile": "extreme",
+  "stress_envelope": "uncalibrated stress envelope",
+  "quick_seeds": [2030, 2031],
+  "nightly_seeds": [2030, 2031, 2032, 2033, 2034, 2035, 2036, 2037, 2038, 2039],
+  "radiometric": {"pattern_gain_max_fraction": 0.10, "gamma": 1.55, "sine_harmonic_2": 0.05, "sine_harmonic_3": 0.03, "vignette": 0.32, "low_frequency_gradient": 0.14, "flare_fraction": 0.05, "clipping_level": 0.92},
+  "optics": {"projector_psf_sigma_px": 1.1, "camera_psf_sigma_px": 0.9, "spatial_defocus_sigma_px": 1.2},
+  "noise": {"poisson_electrons": 1200.0, "read_sigma": 0.012, "row_sigma": 0.005, "column_sigma": 0.005, "fixed_pattern_sigma": 0.007},
+  "defects": {"hot_pixel_fraction": 0.0008, "dead_pixel_fraction": 0.0008, "cluster_count": 4, "cluster_radius_px": 3},
+  "registration": {"translation_px": [0.7, 1.0], "rotation_deg": [-0.15, 0.15], "rotation_180_center_error_px": 1.0, "rotation_180_extra_deg": 0.15},
+  "surface": {"shadow_fraction": 0.15, "shadow_expand_px": 4, "shadow_transmission": 0.15, "low_reflectance_scale": 0.25, "metal_gain": 1.8, "multipath_halo_fraction": 0.12, "bloom_sigma_px": 2.8, "bloom_gain": 0.25},
+  "gray_stress": {"boundary_gradient": 0.15, "boundary_radius_px": 3, "bit_flip_fraction": 0.03, "cycle_slip_fraction": 0.07}
+}
