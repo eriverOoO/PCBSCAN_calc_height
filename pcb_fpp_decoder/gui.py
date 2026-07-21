@@ -12,7 +12,6 @@ from tkinter import (
     LEFT,
     RIGHT,
     Button,
-    Canvas,
     Checkbutton,
     Entry,
     Frame,
@@ -20,7 +19,6 @@ from tkinter import (
     Label,
     LabelFrame,
     OptionMenu,
-    Scrollbar,
     StringVar,
     Tk,
     filedialog,
@@ -36,8 +34,7 @@ from .io import COLOR_INPUT_MODES, parse_crosstalk_matrix
 _DONE_TOKEN = "__PCB_FPP_DECODE_DONE__"
 
 _OPTION_LABELS = {
-    "relative": "상대 위상 (phase units)",
-    "phase_linear": "선형 위상 mm",
+    "relative": "상대 높이",
     "reference": "기준 위상",
     "triangulation": "삼각측량",
     "inverse-linear": "역선형",
@@ -62,8 +59,6 @@ _OPTION_LABELS = {
     "default": "기본",
     "negated": "부호 반전",
     "swapped": "축 교체",
-    "higher-confidence": "높은 신뢰도 view",
-    "invalid": "invalid 처리",
     "reverse": "역방향",
     "1": "+",
     "-1": "-",
@@ -405,15 +400,9 @@ class DecoderGui:
         self.height_mode_var = StringVar(value="relative")
         self.reference_scan_var = StringVar()
         self.reference_phase_var = StringVar()
-        self.reference_scan_0_var = StringVar()
-        self.reference_scan_180_var = StringVar()
-        self.reference_phase_0_var = StringVar()
-        self.reference_phase_180_var = StringVar()
         self.calibration_config_var = StringVar()
         self.height_sign_var = StringVar(value="1")
         self.fusion_mode_var = StringVar(value="modulation-weighted")
-        self.fusion_max_difference_var = StringVar(value="0.25")
-        self.fusion_inconsistent_policy_var = StringVar(value="higher-confidence")
         self.fusion_center_var = StringVar()
         self.fusion_transform_var = StringVar()
         self.registration_rotation_var = IntVar(value=0)
@@ -434,40 +423,15 @@ class DecoderGui:
         self.pcb_margin_var = StringVar(value="0")
         self.pcb_inset_var = StringVar(value="0.5")
         self.max_points_var = StringVar(value="300000")
-        self.detrend_var = IntVar(value=0)
+        self.detrend_var = IntVar(value=1)
         self.correction_var = IntVar(value=1)
         self.messages: queue.Queue[str] = queue.Queue()
         self._build()
         self.root.after(100, self._poll_messages)
 
     def _build(self) -> None:
-        # Keep every setting reachable when the application window is shorter
-        # than the form.  A Canvas is used because Tk frames do not scroll by
-        # themselves.
-        scroll_container = Frame(self.root)
-        scroll_container.pack(fill=BOTH, expand=True)
-
-        self.content_canvas = Canvas(scroll_container, highlightthickness=0)
-        scrollbar = Scrollbar(
-            scroll_container,
-            orient="vertical",
-            command=self.content_canvas.yview,
-        )
-        self.content_canvas.configure(yscrollcommand=scrollbar.set)
-        self.content_canvas.pack(side=LEFT, fill=BOTH, expand=True)
-        scrollbar.pack(side=RIGHT, fill="y")
-
-        outer = Frame(self.content_canvas, padx=10, pady=10)
-        self._content_window = self.content_canvas.create_window(
-            (0, 0),
-            window=outer,
-            anchor="nw",
-        )
-        outer.bind("<Configure>", self._update_scroll_region)
-        self.content_canvas.bind("<Configure>", self._resize_scroll_content)
-        self.root.bind_all("<MouseWheel>", self._on_mousewheel, add="+")
-        self.root.bind_all("<Button-4>", self._on_mousewheel, add="+")
-        self.root.bind_all("<Button-5>", self._on_mousewheel, add="+")
+        outer = Frame(self.root, padx=10, pady=10)
+        outer.pack(fill=BOTH, expand=True)
 
         folders = LabelFrame(outer, text="입력 / 출력", padx=8, pady=6)
         folders.pack(fill="x", pady=(0, 8))
@@ -486,7 +450,7 @@ class DecoderGui:
             height,
             "높이 모드",
             self.height_mode_var,
-            ("relative", "reference", "phase_linear", "triangulation", "inverse-linear"),
+            ("relative", "reference", "triangulation", "inverse-linear"),
         )
         self._folder_row(
             height,
@@ -500,30 +464,6 @@ class DecoderGui:
             self.reference_phase_var,
             self._choose_reference_phase,
         )
-        self._folder_row(
-            height,
-            "0도 기준 스캔",
-            self.reference_scan_0_var,
-            self._choose_reference_scan_0,
-        )
-        self._folder_row(
-            height,
-            "180도 기준 스캔",
-            self.reference_scan_180_var,
-            self._choose_reference_scan_180,
-        )
-        self._file_row(
-            height,
-            "0도 기준 위상",
-            self.reference_phase_0_var,
-            self._choose_reference_phase_0,
-        )
-        self._file_row(
-            height,
-            "180도 기준 위상",
-            self.reference_phase_180_var,
-            self._choose_reference_phase_180,
-        )
         self._file_row(
             height,
             "보정 설정",
@@ -536,13 +476,6 @@ class DecoderGui:
             "합성 모드",
             self.fusion_mode_var,
             ("modulation-weighted", "average"),
-        )
-        self._entry_row(height, "합성 최대 차이 mm", self.fusion_max_difference_var)
-        self._option_row(
-            height,
-            "불일치 처리",
-            self.fusion_inconsistent_policy_var,
-            ("higher-confidence", "invalid"),
         )
         self._registration_check_row(height)
         self._entry_row(height, "합성 중심 x,y", self.fusion_center_var)
@@ -642,34 +575,6 @@ class DecoderGui:
         self.log = scrolledtext.ScrolledText(outer, height=10)
         self.log.pack(fill=BOTH, expand=True)
 
-    def _update_scroll_region(self, _event=None) -> None:
-        self.content_canvas.configure(scrollregion=self.content_canvas.bbox("all"))
-
-    def _resize_scroll_content(self, event) -> None:
-        self.content_canvas.itemconfigure(self._content_window, width=event.width)
-        self._update_scroll_region()
-
-    def _on_mousewheel(self, event):
-        """Scroll the settings form when the pointer is over it.
-
-        Windows supplies ``delta`` in multiples of 120, while X11 uses button
-        4/5 events.  Supporting both keeps the standalone app portable.
-        """
-        widget = self.root.winfo_containing(event.x_root, event.y_root)
-        while widget is not None:
-            if widget is self.content_canvas:
-                if getattr(event, "num", None) == 4:
-                    amount = -1
-                elif getattr(event, "num", None) == 5:
-                    amount = 1
-                else:
-                    steps = max(1, abs(event.delta) // 120)
-                    amount = -steps if event.delta > 0 else steps
-                self.content_canvas.yview_scroll(amount, "units")
-                return "break"
-            widget = widget.master
-        return None
-
     def _folder_row(self, parent: Frame, label: str, var: StringVar, command) -> None:
         row = Frame(parent)
         row.pack(fill="x", pady=4)
@@ -751,32 +656,6 @@ class DecoderGui:
         if filename:
             self.reference_phase_var.set(filename)
 
-    def _choose_reference_scan_0(self) -> None:
-        folder = filedialog.askdirectory(title="0도 기준 스캔 폴더 선택")
-        if folder:
-            self.reference_scan_0_var.set(folder)
-
-    def _choose_reference_scan_180(self) -> None:
-        folder = filedialog.askdirectory(title="180도 기준 스캔 폴더 선택")
-        if folder:
-            self.reference_scan_180_var.set(folder)
-
-    def _choose_reference_phase_0(self) -> None:
-        filename = filedialog.askopenfilename(
-            title="0도 기준 absolute_phase.npy 선택",
-            filetypes=(("NumPy phase", "*.npy"), ("All files", "*.*")),
-        )
-        if filename:
-            self.reference_phase_0_var.set(filename)
-
-    def _choose_reference_phase_180(self) -> None:
-        filename = filedialog.askopenfilename(
-            title="180도 기준 absolute_phase.npy 선택",
-            filetypes=(("NumPy phase", "*.npy"), ("All files", "*.*")),
-        )
-        if filename:
-            self.reference_phase_180_var.set(filename)
-
     def _choose_calibration_config(self) -> None:
         filename = filedialog.askopenfilename(
             title="보정 설정 파일 선택",
@@ -833,10 +712,6 @@ class DecoderGui:
         height_mode = self.height_mode_var.get()
         reference_scan = self._optional_path(self.reference_scan_var)
         reference_phase = self._optional_path(self.reference_phase_var)
-        reference_scan_0 = self._optional_path(self.reference_scan_0_var)
-        reference_scan_180 = self._optional_path(self.reference_scan_180_var)
-        reference_phase_0 = self._optional_path(self.reference_phase_0_var)
-        reference_phase_180 = self._optional_path(self.reference_phase_180_var)
         calibration_config = self._optional_path(self.calibration_config_var)
         fusion_transform = self._optional_path(self.fusion_transform_var)
         fusion_center = self._parse_fusion_center()
@@ -858,17 +733,11 @@ class DecoderGui:
             self.analysis_stage_diameter_var.get(),
         )
 
-        if (
-            height_mode != "relative"
-            and reference_scan is None
-            and reference_phase is None
-            and reference_scan_0 is None
-            and reference_phase_0 is None
-        ):
+        if height_mode != "relative" and reference_scan is None and reference_phase is None:
             raise ValueError(
                 "상대 높이가 아닌 모드에서는 기준 스캔 폴더 또는 기준 위상 파일이 필요합니다."
             )
-        if height_mode in ("phase_linear", "triangulation", "inverse-linear") and calibration_config is None:
+        if height_mode in ("triangulation", "inverse-linear") and calibration_config is None:
             raise ValueError(
                 "삼각측량 또는 역선형 높이 모드에서는 보정 설정 파일이 필요합니다."
             )
@@ -891,17 +760,9 @@ class DecoderGui:
             height_mode=height_mode,
             reference_scan=reference_scan,
             reference_phase=reference_phase,
-            reference_scan_0=reference_scan_0,
-            reference_scan_180=reference_scan_180,
-            reference_phase_0=reference_phase_0,
-            reference_phase_180=reference_phase_180,
             calibration_config=calibration_config,
             height_sign=_parse_float("높이 부호", self.height_sign_var.get()),
             fusion_mode=self.fusion_mode_var.get(),
-            fusion_max_height_difference_mm=_parse_float(
-                "합성 최대 차이 mm", self.fusion_max_difference_var.get()
-            ),
-            fusion_inconsistent_policy=self.fusion_inconsistent_policy_var.get(),
             fusion_center=fusion_center,
             fusion_transform=fusion_transform,
             analysis_roi_mode=analysis_roi_mode,

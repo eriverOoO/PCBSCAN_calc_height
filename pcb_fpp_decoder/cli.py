@@ -106,10 +106,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--median-filter", type=int, default=0)
     parser.add_argument(
         "--height-mode",
-        choices=("relative", "reference", "phase_linear", "triangulation", "inverse-linear"),
+        choices=("relative", "reference", "triangulation", "inverse-linear"),
         default="relative",
         help=(
-            "relative outputs phase units only; reference/phase_linear/triangulation/"
+            "relative uses absolute phase preview only; reference/triangulation/"
             "inverse-linear require a flat reference phase to cancel projector keystone"
         ),
     )
@@ -124,26 +124,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Precomputed flat reference absolute_phase.npy used for keystone cancellation",
     )
     parser.add_argument(
-        "--reference-scan-0",
-        type=Path,
-        help="0-degree flat reference scan; overrides --reference-scan for the 0 view",
-    )
-    parser.add_argument(
-        "--reference-scan-180",
-        type=Path,
-        help="180-degree flat reference scan; overrides --reference-scan for the 180 view",
-    )
-    parser.add_argument(
-        "--reference-phase-0",
-        type=Path,
-        help="0-degree precomputed reference phase; overrides --reference-phase",
-    )
-    parser.add_argument(
-        "--reference-phase-180",
-        type=Path,
-        help="180-degree precomputed reference phase; overrides --reference-phase",
-    )
-    parser.add_argument(
         "--calibration-config",
         type=Path,
         help="JSON/NPZ calibration. Triangulation accepts scalar or map d/l/p parameters.",
@@ -154,18 +134,6 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("average", "modulation-weighted"),
         default="modulation-weighted",
         help="How to combine pixels valid in both 0 and 180 degree scans",
-    )
-    parser.add_argument(
-        "--fusion-max-height-difference-mm",
-        type=float,
-        default=0.25,
-        help="Reject metric overlap blending above this absolute view difference",
-    )
-    parser.add_argument(
-        "--fusion-inconsistent-policy",
-        choices=("higher-confidence", "invalid"),
-        default="higher-confidence",
-        help="Resolve rejected overlap using the stronger view or mark it invalid",
     )
     parser.add_argument(
         "--fusion-center",
@@ -352,15 +320,9 @@ def config_from_args(args: argparse.Namespace) -> DecodeConfig:
         height_mode=args.height_mode,
         reference_scan=args.reference_scan,
         reference_phase=args.reference_phase,
-        reference_scan_0=args.reference_scan_0,
-        reference_scan_180=args.reference_scan_180,
-        reference_phase_0=args.reference_phase_0,
-        reference_phase_180=args.reference_phase_180,
         calibration_config=args.calibration_config,
         height_sign=args.height_sign,
         fusion_mode=args.fusion_mode,
-        fusion_max_height_difference_mm=args.fusion_max_height_difference_mm,
-        fusion_inconsistent_policy=args.fusion_inconsistent_policy,
         fusion_center=tuple(args.fusion_center) if args.fusion_center else None,
         fusion_transform=args.fusion_transform,
         analysis_roi_mode=analysis_roi_mode,
