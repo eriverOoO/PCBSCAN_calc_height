@@ -147,6 +147,40 @@ def inverse_linear_height(
     return height.astype(np.float32)
 
 
+def phase_linear_height(
+    delta_phi: np.ndarray,
+    calibration: Calibration,
+    fallback_sign: float = 1.0,
+) -> tuple[np.ndarray, dict[str, float]]:
+    """Convert reference-subtracted absolute phase to millimeters."""
+    phase_per_mm = calibration.get_float(
+        "phase_linear.phase_per_mm", "phase_per_mm"
+    )
+    offset_phase = calibration.get_float(
+        "phase_linear.offset_phase", "offset_phase"
+    )
+    height_sign = calibration.get_float(
+        "phase_linear.height_sign", "height_sign"
+    )
+    if phase_per_mm is None or offset_phase is None:
+        raise ValueError(
+            "phase_linear mode requires phase_per_mm and offset_phase in calibration JSON"
+        )
+    if not np.isfinite(phase_per_mm) or phase_per_mm <= 0:
+        raise ValueError("phase_per_mm must be a finite positive value")
+    if height_sign is None:
+        height_sign = float(fallback_sign)
+    if not np.isfinite(height_sign) or height_sign == 0:
+        raise ValueError("height_sign must be a finite non-zero value")
+    signed_delta = float(height_sign) * np.asarray(delta_phi, dtype=np.float32)
+    height = (signed_delta - float(offset_phase)) / float(phase_per_mm)
+    return height.astype(np.float32), {
+        "phase_per_mm": float(phase_per_mm),
+        "offset_phase": float(offset_phase),
+        "height_sign": float(height_sign),
+    }
+
+
 def structured_light_calibration_report(calibration: Calibration | None) -> dict[str, Any]:
     if calibration is None or not calibration.data:
         return {"available": False, "method": None}
