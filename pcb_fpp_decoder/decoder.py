@@ -14,6 +14,7 @@ from .calibration import (
     Calibration,
     inverse_linear_height,
     load_calibration,
+    phase_linear_height,
     structured_light_calibration_report,
     triangulation_height,
 )
@@ -24,6 +25,7 @@ from .phase import (
     TWO_PI,
     compute_modulation,
     compute_wrapped_phase_4step,
+    diagnose_phase_conventions,
     wrapped_to_0_2pi,
 )
 from .visualization import (
@@ -89,9 +91,15 @@ class DecodeConfig:
     height_mode: str = "relative"
     reference_phase: Path | None = None
     reference_scan: Path | None = None
+    reference_phase_0: Path | None = None
+    reference_phase_180: Path | None = None
+    reference_scan_0: Path | None = None
+    reference_scan_180: Path | None = None
     calibration_config: Path | None = None
     height_sign: float = 1.0
     fusion_mode: str = "modulation-weighted"
+    fusion_max_height_difference_mm: float = 0.25
+    fusion_inconsistent_policy: str = "higher-confidence"
     fusion_center: tuple[float, float] | None = None
     fusion_transform: Path | None = None
     analysis_roi_mode: str = "none"
@@ -142,6 +150,7 @@ class PhaseResult:
     modulation_norm: np.ndarray
     modulation_mask: np.ndarray
     valid_mask: np.ndarray
+    convention_diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -151,6 +160,7 @@ class AbsolutePhaseResult:
     combined_mask: np.ndarray
     correction_mask: np.ndarray
     stripe_order_corrected: np.ndarray
+    cycle_slip_mask: np.ndarray
     notes: list[str] = field(default_factory=list)
 
 
@@ -166,6 +176,7 @@ class HeightResult:
     stats: dict[str, float] = field(default_factory=dict)
     reference_used: bool = False
     delta_phase: np.ndarray | None = None
+    calibration_parameters: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -191,6 +202,9 @@ class FusionResult:
     aligned_height_180: np.ndarray
     aligned_mask_180: np.ndarray
     aligned_confidence_180: np.ndarray
+    aligned_cycle_slip_180: np.ndarray
+    cycle_slip_mask: np.ndarray
+    fusion_rejection_mask: np.ndarray
     transform_matrix: np.ndarray
     transform_kind: str
     report: dict[str, Any]
@@ -200,6 +214,12 @@ class PcbFppDecoder:
     def __init__(self, config: DecodeConfig):
         if config.output_profile not in OUTPUT_PROFILES:
             raise ValueError("output_profile must be compact or full")
+        if config.fusion_max_height_difference_mm < 0:
+            raise ValueError("fusion_max_height_difference_mm must be non-negative")
+        if config.fusion_inconsistent_policy not in ("higher-confidence", "invalid"):
+            raise ValueError(
+                "fusion_inconsistent_policy must be higher-confidence or invalid"
+            )
         self.config = config
 
     def load_scan(self, input_dir: Path) -> PatternSet:
@@ -340,6 +360,7 @@ class PcbFppDecoder:
             modulation_norm=modulation_norm,
             modulation_mask=modulation_mask,
             valid_mask=correction.valid_mask,
+            convention_diagnostics=diagnose_phase_conventions(i0, i90, i180, i270),
         )
 
     def unwrap_absolute_phase(
@@ -379,6 +400,12 @@ class PcbFppDecoder:
                 "implemented heuristic boundary correction, not exact Cai algorithm"
             )
 
+        cycle_slip_mask = _detect_gray_sine_cycle_slips(
+            corrected_k,
+            phi_for_phase,
+            combined_mask,
+            boundary_margin=self.config.boundary_margin,
+        )
         absolute = np.where(combined_mask, absolute, np.nan).astype(np.float32)
         absolute_raw = np.where(combined_mask, absolute_raw, np.nan).astype(np.float32)
         return AbsolutePhaseResult(
@@ -387,11 +414,15 @@ class PcbFppDecoder:
             combined_mask=combined_mask,
             correction_mask=correction_mask,
             stripe_order_corrected=corrected_k.astype(np.int32),
+            cycle_slip_mask=cycle_slip_mask,
             notes=notes,
         )
 
     def compute_height(
-        self, absolute_phase: AbsolutePhaseResult, calibration: Calibration | None
+        self,
+        absolute_phase: AbsolutePhaseResult,
+        calibration: Calibration | None,
+        view_angle: int | None = None,
     ) -> HeightResult:
         mode = self.config.height_mode
         phi = absolute_phase.absolute_phase
@@ -402,8 +433,9 @@ class PcbFppDecoder:
         message = "metric calibration missing; output is relative phase-derived preview, not physical height"
         reference_used = False
         delta_phase: np.ndarray | None = None
+        calibration_parameters: dict[str, float] = {}
 
-        reference = self._load_reference_phase_if_available()
+        reference = self._load_reference_phase_if_available(view_angle=view_angle)
         if mode == "relative":
             height = phi.copy()
         else:
@@ -445,6 +477,21 @@ class PcbFppDecoder:
                     "triangulation height computed from reference delta phase; "
                     f"projector keystone handled by reference subtraction/calibration; {params}"
                 )
+            elif mode == "phase_linear":
+                if calibration is None or not calibration.is_loaded:
+                    raise ValueError("phase_linear mode requires --calibration-config")
+                height, calibration_parameters = phase_linear_height(
+                    delta_phi,
+                    calibration,
+                    fallback_sign=self.config.height_sign,
+                )
+                metric = True
+                units = "mm"
+                filename = "height_mm.npy"
+                message = (
+                    "phase-linear metric height computed from signed reference delta phase; "
+                    "units=mm"
+                )
             elif mode == "inverse-linear":
                 if calibration is None or not calibration.is_loaded:
                     raise ValueError("inverse-linear mode requires --calibration-config")
@@ -458,7 +505,7 @@ class PcbFppDecoder:
                 )
             else:
                 raise ValueError(
-                    "height_mode must be relative, reference, triangulation, or inverse-linear"
+                    "height_mode must be relative, reference, phase_linear, triangulation, or inverse-linear"
                 )
 
         height = np.where(mask, height, np.nan).astype(np.float32)
@@ -480,9 +527,12 @@ class PcbFppDecoder:
             stats=stats,
             reference_used=reference_used,
             delta_phase=delta_phase,
+            calibration_parameters=calibration_parameters,
         )
 
-    def _decode_in_memory(self, input_dir: Path) -> DecodeResult:
+    def _decode_in_memory(
+        self, input_dir: Path, view_angle: int | None = None
+    ) -> DecodeResult:
         patterns = self.load_scan(input_dir)
         analysis_roi = self.compute_analysis_roi(patterns)
         correction = self.compute_white_black_correction(patterns)
@@ -498,7 +548,7 @@ class PcbFppDecoder:
         if analysis_roi is not None:
             _apply_analysis_roi_to_absolute(absolute, analysis_roi.mask)
         calibration = load_calibration(self.config.calibration_config)
-        height = self.compute_height(absolute, calibration)
+        height = self.compute_height(absolute, calibration, view_angle=view_angle)
         report = self._build_report(
             patterns,
             correction,
@@ -568,8 +618,27 @@ class PcbFppDecoder:
             matrix,
             kind,
         )
+        aligned_cycle_slip_float, _ = _warp_float_with_mask(
+            deg180.absolute.cycle_slip_mask.astype(np.float32),
+            np.ones_like(deg180.absolute.cycle_slip_mask, dtype=bool),
+            deg0.patterns.shape,
+            matrix,
+            kind,
+        )
+        aligned_cycle_slip180 = aligned_cycle_slip_float > 0.5
 
-        fused_height, fused_mask, source_map, fused_confidence = _fuse_height_maps(
+        metric = deg0.height.metric and deg180.height.metric
+        max_difference = (
+            self.config.fusion_max_height_difference_mm if metric else None
+        )
+
+        (
+            fused_height,
+            fused_mask,
+            source_map,
+            fused_confidence,
+            fusion_rejection_mask,
+        ) = _fuse_height_maps(
             h0,
             mask0,
             confidence0,
@@ -578,7 +647,12 @@ class PcbFppDecoder:
             aligned_confidence180,
             mode=self.config.fusion_mode,
             epsilon=self.config.epsilon,
+            max_difference=max_difference,
+            cycle_slip0=deg0.absolute.cycle_slip_mask,
+            cycle_slip180=aligned_cycle_slip180,
+            inconsistent_policy=self.config.fusion_inconsistent_policy,
         )
+        cycle_slip_mask = deg0.absolute.cycle_slip_mask | aligned_cycle_slip180
         message = (
             "0/180 degree scans fused after spatial alignment; "
             f"fusion mode={self.config.fusion_mode}"
@@ -589,12 +663,13 @@ class PcbFppDecoder:
             height=fused_height,
             mask=fused_mask,
             mode=f"fused-{deg0.height.mode}",
-            metric=deg0.height.metric and deg180.height.metric,
-            filename="height_fused.npy",
+            metric=metric,
+            filename="height_mm.npy" if metric else "height_fused.npy",
             message=message,
             units=deg0.height.units if deg0.height.units == deg180.height.units else "mixed",
             stats=_array_stats(fused_height, fused_mask),
             reference_used=deg0.height.reference_used and deg180.height.reference_used,
+            calibration_parameters=deg0.height.calibration_parameters,
         )
         report = self._build_fusion_report(
             deg0,
@@ -603,6 +678,8 @@ class PcbFppDecoder:
             source_map,
             matrix,
             kind,
+            cycle_slip_mask,
+            fusion_rejection_mask,
         )
         return FusionResult(
             deg0=deg0,
@@ -613,6 +690,9 @@ class PcbFppDecoder:
             aligned_height_180=aligned_h180,
             aligned_mask_180=aligned_mask180,
             aligned_confidence_180=aligned_confidence180,
+            aligned_cycle_slip_180=aligned_cycle_slip180,
+            cycle_slip_mask=cycle_slip_mask,
+            fusion_rejection_mask=fusion_rejection_mask,
             transform_matrix=matrix,
             transform_kind=kind,
             report=report,
@@ -625,8 +705,8 @@ class PcbFppDecoder:
         output_dir: Path,
     ) -> FusionResult:
         output_dir = Path(output_dir).expanduser().resolve()
-        deg0 = self._decode_in_memory(input_dir_0)
-        deg180 = self._decode_in_memory(input_dir_180)
+        deg0 = self._decode_in_memory(input_dir_0, view_angle=0)
+        deg180 = self._decode_in_memory(input_dir_180, view_angle=180)
         fusion = self.fuse_decode_results(deg0, deg180)
         self.save_outputs(deg0, output_dir / "views" / "deg_0")
         self.save_outputs(deg180, output_dir / "views" / "deg_180")
@@ -663,6 +743,7 @@ class PcbFppDecoder:
         save_mask(masks_dir / "modulation_mask.png", result.phase.modulation_mask)
         save_mask(masks_dir / "saturation_mask.png", result.correction.saturation_mask)
         save_mask(masks_dir / "combined_mask.png", result.absolute.combined_mask)
+        save_mask(masks_dir / "cycle_slip_mask.png", result.absolute.cycle_slip_mask)
         if result.analysis_roi is not None:
             save_mask(masks_dir / "analysis_roi_mask.png", result.analysis_roi.mask)
             save_mask(masks_dir / "marker_space_mask.png", result.analysis_roi.marker_space_mask)
@@ -727,14 +808,28 @@ class PcbFppDecoder:
                 result.height.mask,
                 cmap="coolwarm",
             )
+        height_title = (
+            "Metric height (mm)" if result.height.metric else "Relative phase (phase units)"
+        )
         save_colormap(
             height_dir / "height_heatmap.png",
             result.height.height,
             result.height.mask,
             cmap="turbo",
             with_colorbar=True,
-            title="Height / relative phase",
+            title=height_title,
+            colorbar_label=result.height.units,
         )
+        if result.height.metric:
+            save_colormap(
+                height_dir / "height_mm.png",
+                result.height.height,
+                result.height.mask,
+                cmap="turbo",
+                with_colorbar=True,
+                title=height_title,
+                colorbar_label="mm",
+            )
         if full_outputs:
             save_colormap(
                 height_dir / "height_heatmap_colorbar.png",
@@ -742,7 +837,8 @@ class PcbFppDecoder:
                 result.height.mask,
                 cmap="turbo",
                 with_colorbar=True,
-                title="Height / relative phase",
+                title=height_title,
+                colorbar_label=result.height.units,
             )
         save_colormap(
             height_dir / "height_relative_preview.png",
@@ -800,14 +896,30 @@ class PcbFppDecoder:
         np.save(height_dir / fusion.height.filename, fusion.height.height)
         if full_outputs and fusion.height.filename != "height.npy":
             np.save(height_dir / "height.npy", fusion.height.height)
+        height_title = (
+            "Fused metric height (mm)"
+            if fusion.height.metric
+            else "Fused relative phase (phase units)"
+        )
         save_colormap(
             height_dir / "height_heatmap.png",
             fusion.height.height,
             fusion.height.mask,
             cmap="turbo",
             with_colorbar=True,
-            title="Fused height",
+            title=height_title,
+            colorbar_label=fusion.height.units,
         )
+        if fusion.height.metric:
+            save_colormap(
+                height_dir / "height_mm.png",
+                fusion.height.height,
+                fusion.height.mask,
+                cmap="turbo",
+                with_colorbar=True,
+                title=height_title,
+                colorbar_label="mm",
+            )
         if full_outputs:
             save_colormap(
                 height_dir / "height_heatmap_colorbar.png",
@@ -815,7 +927,8 @@ class PcbFppDecoder:
                 fusion.height.mask,
                 cmap="turbo",
                 with_colorbar=True,
-                title="Fused height",
+                title=height_title,
+                colorbar_label=fusion.height.units,
             )
         save_colormap(
             height_dir / "height_fused_preview.png",
@@ -830,6 +943,8 @@ class PcbFppDecoder:
         save_mask(masks_dir / "source_deg_180_only.png", source_map == 2)
         save_mask(masks_dir / "source_overlap.png", source_map == 3)
         save_mask(masks_dir / "source_missing.png", source_map == 0)
+        save_mask(masks_dir / "cycle_slip_mask.png", fusion.cycle_slip_mask)
+        save_mask(masks_dir / "fusion_rejection_mask.png", fusion.fusion_rejection_mask)
         if full_outputs:
             np.save(masks_dir / "source_map.npy", source_map)
 
@@ -838,6 +953,8 @@ class PcbFppDecoder:
             np.save(fusion_dir / "aligned_mask_180.npy", fusion.aligned_mask_180)
             np.save(fusion_dir / "confidence.npy", fusion.confidence)
             np.save(fusion_dir / "aligned_confidence_180.npy", fusion.aligned_confidence_180)
+            np.save(fusion_dir / "aligned_cycle_slip_180.npy", fusion.aligned_cycle_slip_180)
+            np.save(fusion_dir / "fusion_rejection_mask.npy", fusion.fusion_rejection_mask)
             np.save(fusion_dir / "transform_matrix.npy", fusion.transform_matrix)
             save_colormap(
                 fusion_dir / "aligned_height_180_preview.png",
@@ -925,6 +1042,8 @@ class PcbFppDecoder:
         source_map: np.ndarray,
         matrix: np.ndarray,
         transform_kind: str,
+        cycle_slip_mask: np.ndarray,
+        fusion_rejection_mask: np.ndarray,
     ) -> dict[str, Any]:
         total = int(np.prod(source_map.shape))
         coverage = {
@@ -943,6 +1062,12 @@ class PcbFppDecoder:
                 "mode": self.config.fusion_mode,
                 "transform_kind": transform_kind,
                 "transform_matrix": matrix.tolist(),
+                "max_height_difference_mm": self.config.fusion_max_height_difference_mm,
+                "inconsistent_policy": self.config.fusion_inconsistent_policy,
+                "cycle_slip_ratio": float(np.count_nonzero(cycle_slip_mask) / total),
+                "rejection_ratio": float(
+                    np.count_nonzero(fusion_rejection_mask) / total
+                ),
                 "coverage": coverage,
             },
             "views": {
@@ -1029,7 +1154,11 @@ class PcbFppDecoder:
             "phase": {
                 "phase_convention": self.config.phase_convention,
                 "phase_direction": self.config.phase_direction,
+                "convention_diagnostics": phase.convention_diagnostics,
                 "half_period_correction_enabled": self.config.apply_half_period_correction,
+                "cycle_slip_ratio": float(
+                    np.count_nonzero(absolute.cycle_slip_mask) / total
+                ),
                 "notes": absolute.notes,
             },
             "height": {
@@ -1039,6 +1168,8 @@ class PcbFppDecoder:
                 "message": height.message,
                 "stats": height.stats,
                 "reference_used": height.reference_used,
+                "calibration_parameters": height.calibration_parameters,
+                "calibration_parameters": height.calibration_parameters,
             },
             "calibration": {
                 "used": bool(calibration and calibration.is_loaded),
@@ -1055,15 +1186,29 @@ class PcbFppDecoder:
         }
         return report
 
-    def _load_reference_phase_if_available(self) -> np.ndarray | None:
-        if self.config.reference_phase is not None:
-            path = Path(self.config.reference_phase).expanduser().resolve()
+    def _load_reference_phase_if_available(
+        self, view_angle: int | None = None
+    ) -> np.ndarray | None:
+        reference_phase = self.config.reference_phase
+        reference_scan = self.config.reference_scan
+        if view_angle == 0:
+            reference_phase = self.config.reference_phase_0 or reference_phase
+            reference_scan = self.config.reference_scan_0 or reference_scan
+        elif view_angle == 180:
+            reference_phase = self.config.reference_phase_180 or reference_phase
+            reference_scan = self.config.reference_scan_180 or reference_scan
+
+        if reference_phase is not None:
+            path = Path(reference_phase).expanduser().resolve()
             if not path.exists():
                 raise FileNotFoundError(f"reference phase file does not exist: {path}")
             return np.load(path).astype(np.float32)
 
-        if self.config.reference_scan is not None:
-            ref_path = resolve_decode_input_dir(Path(self.config.reference_scan), preferred_angle=0)
+        if reference_scan is not None:
+            preferred_angle = 0 if view_angle is None else view_angle
+            ref_path = resolve_decode_input_dir(
+                Path(reference_scan), preferred_angle=preferred_angle
+            )
             processed_phase = ref_path / "phase" / "absolute_phase.npy"
             if processed_phase.exists():
                 return np.load(processed_phase).astype(np.float32)
@@ -1171,6 +1316,33 @@ def _stripe_boundary_mask(k: np.ndarray) -> np.ndarray:
     return dilated
 
 
+def _detect_gray_sine_cycle_slips(
+    stripe_order: np.ndarray,
+    phi_0_2pi: np.ndarray,
+    valid_mask: np.ndarray,
+    boundary_margin: float,
+) -> np.ndarray:
+    """Flag horizontal Gray-period transitions not aligned with the sine wrap."""
+    k = np.asarray(stripe_order, dtype=np.int32)
+    phi = np.asarray(phi_0_2pi, dtype=np.float32)
+    valid_pair = valid_mask[:, 1:] & valid_mask[:, :-1]
+    delta_k = k[:, 1:] - k[:, :-1]
+    phase_wrap = np.abs(phi[:, 1:] - phi[:, :-1]) > math.pi
+    near_boundary = (
+        ((phi[:, :-1] >= TWO_PI - boundary_margin) & (phi[:, 1:] <= boundary_margin))
+        | ((phi[:, 1:] >= TWO_PI - boundary_margin) & (phi[:, :-1] <= boundary_margin))
+    )
+    # A fixed Gray/sine boundary offset is allowed: real pattern sets need not
+    # place the Gray transition exactly at sine phase zero.  Flag only a
+    # multi-period Gray jump that has no accompanying sine wrap; this is the
+    # unambiguous local signature of a cycle assignment slip.
+    mismatch = valid_pair & (np.abs(delta_k) > 1) & ~(phase_wrap | near_boundary)
+    result = np.zeros_like(valid_mask, dtype=bool)
+    result[:, 1:] |= mismatch
+    result[:, :-1] |= mismatch
+    return result
+
+
 def _numpy_median_filter(image: np.ndarray, size: int) -> np.ndarray:
     pad = size // 2
     padded = np.pad(image, pad_width=pad, mode="edge")
@@ -1233,6 +1405,18 @@ def _optical_setup_report(
             "active": height.reference_used,
             "reference_phase": str(config.reference_phase) if config.reference_phase else None,
             "reference_scan": str(config.reference_scan) if config.reference_scan else None,
+            "reference_phase_0": str(config.reference_phase_0)
+            if config.reference_phase_0
+            else None,
+            "reference_phase_180": str(config.reference_phase_180)
+            if config.reference_phase_180
+            else None,
+            "reference_scan_0": str(config.reference_scan_0)
+            if config.reference_scan_0
+            else None,
+            "reference_scan_180": str(config.reference_scan_180)
+            if config.reference_scan_180
+            else None,
             "delta_phase_file": "height/delta_phase.npy"
             if height.delta_phase is not None
             else None,
@@ -1284,6 +1468,7 @@ def _apply_analysis_roi_to_absolute(
 ) -> None:
     absolute.combined_mask = absolute.combined_mask & mask
     absolute.correction_mask = absolute.correction_mask & mask
+    absolute.cycle_slip_mask = absolute.cycle_slip_mask & mask
     absolute.absolute_phase = np.where(
         absolute.combined_mask,
         absolute.absolute_phase,
@@ -1311,22 +1496,34 @@ def _fuse_height_maps(
     confidence180: np.ndarray,
     mode: str,
     epsilon: float,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    max_difference: float | None = None,
+    cycle_slip0: np.ndarray | None = None,
+    cycle_slip180: np.ndarray | None = None,
+    inconsistent_policy: str = "higher-confidence",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     valid0 = mask0 & np.isfinite(height0)
     valid180 = mask180 & np.isfinite(height180)
     only0 = valid0 & ~valid180
     only180 = ~valid0 & valid180
     both = valid0 & valid180
+    rejection = np.zeros(height0.shape, dtype=bool)
+    if max_difference is not None:
+        rejection |= both & (np.abs(height0 - height180) > max_difference)
+    if cycle_slip0 is not None:
+        rejection |= both & np.asarray(cycle_slip0, dtype=bool)
+    if cycle_slip180 is not None:
+        rejection |= both & np.asarray(cycle_slip180, dtype=bool)
+    blend = both & ~rejection
 
     fused = np.full(height0.shape, np.nan, dtype=np.float32)
     fused[only0] = height0[only0]
     fused[only180] = height180[only180]
 
     if mode == "average":
-        fused[both] = 0.5 * (height0[both] + height180[both])
+        fused[blend] = 0.5 * (height0[blend] + height180[blend])
     elif mode == "modulation-weighted":
-        w0 = np.where(both, confidence0, 0.0).astype(np.float32)
-        w180 = np.where(both, confidence180, 0.0).astype(np.float32)
+        w0 = np.where(blend, confidence0, 0.0).astype(np.float32)
+        w180 = np.where(blend, confidence180, 0.0).astype(np.float32)
         weight_sum = w0 + w180
         weighted = np.divide(
             w0 * height0 + w180 * height180,
@@ -1334,21 +1531,39 @@ def _fuse_height_maps(
             out=np.full(height0.shape, np.nan, dtype=np.float32),
         )
         fallback = 0.5 * (height0 + height180)
-        fused[both] = np.where(weight_sum[both] > epsilon, weighted[both], fallback[both])
+        fused[blend] = np.where(
+            weight_sum[blend] > epsilon, weighted[blend], fallback[blend]
+        )
     else:
         raise ValueError("fusion_mode must be average or modulation-weighted")
 
     source_map = np.zeros(height0.shape, dtype=np.uint8)
     source_map[only0] = 1
     source_map[only180] = 2
-    source_map[both] = 3
+    source_map[blend] = 3
+
+    if inconsistent_policy == "higher-confidence":
+        choose0 = rejection & (confidence0 >= confidence180)
+        choose180 = rejection & ~choose0
+        fused[choose0] = height0[choose0]
+        fused[choose180] = height180[choose180]
+        source_map[choose0] = 1
+        source_map[choose180] = 2
+    elif inconsistent_policy != "invalid":
+        raise ValueError(
+            "fusion_inconsistent_policy must be higher-confidence or invalid"
+        )
 
     fused_mask = source_map != 0
     fused_confidence = np.zeros(height0.shape, dtype=np.float32)
     fused_confidence[only0] = confidence0[only0]
     fused_confidence[only180] = confidence180[only180]
-    fused_confidence[both] = np.maximum(confidence0[both], confidence180[both])
-    return fused.astype(np.float32), fused_mask, source_map, fused_confidence
+    fused_confidence[blend] = np.maximum(confidence0[blend], confidence180[blend])
+    rejected_valid = rejection & fused_mask
+    fused_confidence[rejected_valid] = np.maximum(
+        confidence0[rejected_valid], confidence180[rejected_valid]
+    )
+    return fused.astype(np.float32), fused_mask, source_map, fused_confidence, rejection
 
 
 def _warp_float_with_mask(

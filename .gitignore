@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.pytest_tmp*/
 .mypy_cache/
 .ruff_cache/
 tmp_debug*/
@@ -12,9 +13,8 @@ dist/
 *.ply
 markers/
 aruco_markers*/
-*.bat
 
-# Validation inputs/results are reproducible or externally sourced.  Keep only
+# Validation inputs/results are reproducible or externally sourced. Keep only
 # directory placeholders, manifests, configs, and small test fixtures in Git.
 validation_data/**
 !validation_data/**/

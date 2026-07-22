@@ -72,6 +72,7 @@ def save_colormap(
     cmap: str = "viridis",
     with_colorbar: bool = False,
     title: str | None = None,
+    colorbar_label: str | None = None,
 ) -> None:
     display = np.asarray(image, dtype=np.float32)
     if mask is not None:
@@ -90,7 +91,9 @@ def save_colormap(
         ax.axis("off")
         if title:
             ax.set_title(title)
-        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        colorbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        if colorbar_label:
+            colorbar.set_label(colorbar_label)
         fig.tight_layout()
         fig.savefig(path, bbox_inches="tight", pad_inches=0.05)
         plt.close(fig)
