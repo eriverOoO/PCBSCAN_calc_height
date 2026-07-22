@@ -292,19 +292,13 @@ def _save_result_debug_steps(
     combined = add("Combined decode mask", "14_combined_mask.png", "mask")
     save_mask(combined, result.absolute.combined_mask)
     height = add("Height map", "15_height_map.png", "height")
-    height_title = (
-        "Metric height (mm)"
-        if result.height.metric
-        else "Relative phase (phase units)"
-    )
     save_colormap(
         height,
         result.height.height,
         result.height.mask,
         cmap="turbo",
         with_colorbar=True,
-        title=height_title,
-        colorbar_label=result.height.units,
+        title="Height / relative phase",
     )
 
     overview = debug_dir / f"{prefix}_00_pipeline_overview.png"
@@ -355,19 +349,13 @@ def _save_fusion_debug_steps(fusion: FusionResult, debug_dir: Path) -> list[Debu
     steps.append(DebugStep("Fused confidence", confidence_path, "fusion"))
 
     height_path = debug_dir / "fusion_05_fused_height_map.png"
-    height_title = (
-        "Fused metric height (mm)"
-        if fusion.height.metric
-        else "Fused relative phase (phase units)"
-    )
     save_colormap(
         height_path,
         fusion.height.height,
         fusion.height.mask,
         cmap="turbo",
         with_colorbar=True,
-        title=height_title,
-        colorbar_label=fusion.height.units,
+        title="Fused height",
     )
     steps.append(DebugStep("Fused height map", height_path, "height"))
 
@@ -439,10 +427,6 @@ def _copy_config(config: DecodeConfig) -> DecodeConfig:
     for key in (
         "reference_phase",
         "reference_scan",
-        "reference_phase_0",
-        "reference_phase_180",
-        "reference_scan_0",
-        "reference_scan_180",
         "calibration_config",
         "fusion_transform",
     ):
