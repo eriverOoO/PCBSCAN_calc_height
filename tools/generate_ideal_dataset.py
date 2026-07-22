@@ -21,6 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--height-shift-px-per-mm", type=float, default=1.8)
     parser.add_argument("--board-profile", choices=BOARD_PROFILES, default="procedural_generic")
     parser.add_argument("--projector-radial-k1", type=float, default=0.0)
+    parser.add_argument("--max-height-mm", type=float, default=1.9)
     return parser
 
 
@@ -34,6 +35,7 @@ def main(argv: list[str] | None = None) -> int:
         height_shift_px_per_mm=args.height_shift_px_per_mm,
         board_profile=args.board_profile,
         projector_radial_k1=args.projector_radial_k1,
+        reference_board_max_height_mm=args.max_height_mm,
     )
     output = generate_ideal_dataset(args.output_root, config)
     print(f"Generated ideal dataset: {output}")

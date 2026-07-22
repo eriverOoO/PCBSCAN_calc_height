@@ -62,6 +62,7 @@ class IdealDatasetConfig:
     signal_level: float = 54000.0
     sine_contrast: float = 0.45
     board_profile: str = "procedural_generic"
+    reference_board_max_height_mm: float = 1.9
     projector_radial_k1: float = 0.0
     projector_optical_axis_offset_px: tuple[float, float] = (0.0, 0.0)
 
@@ -80,6 +81,8 @@ class IdealDatasetConfig:
             raise ValueError(
                 f"unknown board_profile {self.board_profile!r}; choose one of {BOARD_PROFILES}"
             )
+        if not 0.0 < self.reference_board_max_height_mm < 2.0:
+            raise ValueError("reference_board_max_height_mm must be in (0, 2.0)")
         if len(self.projector_optical_axis_offset_px) != 2:
             raise ValueError("projector_optical_axis_offset_px must contain x and y")
 
@@ -366,6 +369,7 @@ def _build_reference_board_scene(config: IdealDatasetConfig) -> SceneMaps:
         circle(-8.1, 16.0, 2.1, 3.8, 6, 0.64)
         circle(10.0, 0.5, 2.1, 3.8, 6, 0.64)
 
+    np.minimum(height_mm, config.reference_board_max_height_mm, out=height_mm)
     components = board & (height_mm > 0)
     return SceneMaps(
         height_mm=height_mm,
@@ -600,6 +604,11 @@ def generate_ideal_dataset(
             "config": asdict(config),
         },
         "board_model": BOARD_PROFILE_METADATA[config.board_profile],
+        "height_policy": {
+            "reference_board_max_height_mm": config.reference_board_max_height_mm,
+            "meaning": "relative height above the simulated PCB top surface",
+            "source_cad_z_used_directly": False,
+        },
         "scanner_model": {
             "design_basis": "camera/projector separation and calibrated light-transport controls adapted from scanner-sim concepts",
             "upstream_reference": "https://geometryprocessing.github.io/scanner-sim/",

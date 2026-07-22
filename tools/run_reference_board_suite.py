@@ -56,12 +56,22 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _dataset_matches(dataset_root: Path, board_profile: str) -> bool:
+def _dataset_matches(dataset_root: Path, config: IdealDatasetConfig) -> bool:
     manifest_path = dataset_root / "manifest.json"
     if not manifest_path.exists():
         return False
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    return manifest.get("generator", {}).get("config", {}).get("board_profile") == board_profile
+    recorded = manifest.get("generator", {}).get("config", {})
+    expected = {
+        "board_profile": config.board_profile,
+        "width": config.width,
+        "height": config.height,
+        "seed": config.seed,
+        "reference_board_max_height_mm": config.reference_board_max_height_mm,
+        "projector_radial_k1": config.projector_radial_k1,
+        "projector_optical_axis_offset_px": list(config.projector_optical_axis_offset_px),
+    }
+    return all(recorded.get(key) == value for key, value in expected.items())
 
 
 def run_reference_suite(args: argparse.Namespace) -> tuple[Path, list[dict[str, Any]]]:
@@ -81,6 +91,15 @@ def run_reference_suite(args: argparse.Namespace) -> tuple[Path, list[dict[str, 
         case_dir = stress_root / board_profile / f"case_{case_seed}"
         result_dir = output_root / board_profile / f"case_{case_seed}"
         print(f"[{board_profile}] ideal + L0 + L1:{args.stress_profile}")
+        ideal_config = IdealDatasetConfig(
+            width=args.width,
+            height=args.height,
+            seed=args.seed + index,
+            board_profile=board_profile,
+            reference_board_max_height_mm=1.9,
+            projector_radial_k1=-0.018,
+            projector_optical_axis_offset_px=(4.0, -3.0),
+        )
         record: dict[str, Any] = {
             "profile": board_profile,
             "seed": case_seed,
@@ -90,20 +109,10 @@ def run_reference_suite(args: argparse.Namespace) -> tuple[Path, list[dict[str, 
         }
         try:
             if dataset_root.exists():
-                if not _dataset_matches(dataset_root, board_profile):
+                if not _dataset_matches(dataset_root, ideal_config):
                     raise ValueError(f"existing dataset profile mismatch: {dataset_root}")
             else:
-                generate_ideal_dataset(
-                    dataset_root,
-                    IdealDatasetConfig(
-                        width=args.width,
-                        height=args.height,
-                        seed=args.seed + index,
-                        board_profile=board_profile,
-                        projector_radial_k1=-0.018,
-                        projector_optical_axis_offset_px=(4.0, -3.0),
-                    ),
-                )
+                generate_ideal_dataset(dataset_root, ideal_config)
             for view in ("object_0", "object_180", "reference_0", "reference_180"):
                 inspect_pattern_sequence(dataset_root / view)
             l0 = run_l0_validation(

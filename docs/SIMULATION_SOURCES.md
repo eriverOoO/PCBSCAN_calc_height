@@ -23,7 +23,10 @@ code or data directly.
 
 These fixtures support phase-domain regression only. Their component heights,
 materials, optics, and camera/projector calibration are approximations and must
-not be used to claim physical millimetre accuracy.
+not be used to claim physical millimetre accuracy. The simulated relative
+height above the PCB top surface is capped at 1.9 mm for every source-informed
+profile. This cap is a measurement-fixture constraint, not a claim that every
+component in the upstream assembled CAD is physically shorter than 2 mm.
 
 ## Generate and compare all profiles
 

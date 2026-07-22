@@ -85,8 +85,9 @@ def test_open_hardware_board_profiles_have_distinct_source_informed_geometry(
         assert manifest["board_model"] == BOARD_PROFILE_METADATA[profile]
         assert manifest["scanner_model"]["ground_truth_is_decoder_input"] is False
         assert manifest["scanner_model"]["projector"]["radial_k1"] == -0.018
+        assert manifest["height_policy"]["reference_board_max_height_mm"] == 1.9
         assert np.count_nonzero(object_mask) > 100
-        assert np.nanmax(height_mm) > 1.0
+        assert 1.0 < np.nanmax(height_mm) <= 1.9
         signatures.add(
             (
                 int(np.count_nonzero(object_mask)),
