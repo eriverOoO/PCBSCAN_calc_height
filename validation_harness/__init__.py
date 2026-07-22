@@ -14,13 +14,14 @@ from .manifests import (
     sha256_file,
 )
 from .metrics import evaluate_regions
-from .ideal import IdealDatasetConfig, generate_ideal_dataset
+from .ideal import BOARD_PROFILES, IdealDatasetConfig, generate_ideal_dataset
 from .stress import StressSynthesizer
 
 __all__ = [
     "CALIBRATION_SEED_RANGE",
     "HELD_OUT_SEED_RANGE",
     "IdealDatasetConfig",
+    "BOARD_PROFILES",
     "StressSynthesizer",
     "build_l0_manifest",
     "evaluate_regions",

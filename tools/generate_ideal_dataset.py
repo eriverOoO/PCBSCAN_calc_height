@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from validation_harness.ideal import IdealDatasetConfig, generate_ideal_dataset
+from validation_harness.ideal import BOARD_PROFILES, IdealDatasetConfig, generate_ideal_dataset
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -19,6 +19,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--projector-period-px", type=float, default=24.0)
     parser.add_argument("--height-shift-px-per-mm", type=float, default=1.8)
+    parser.add_argument("--board-profile", choices=BOARD_PROFILES, default="procedural_generic")
+    parser.add_argument("--projector-radial-k1", type=float, default=0.0)
     return parser
 
 
@@ -30,6 +32,8 @@ def main(argv: list[str] | None = None) -> int:
         seed=args.seed,
         projector_period_px=args.projector_period_px,
         height_shift_px_per_mm=args.height_shift_px_per_mm,
+        board_profile=args.board_profile,
+        projector_radial_k1=args.projector_radial_k1,
     )
     output = generate_ideal_dataset(args.output_root, config)
     print(f"Generated ideal dataset: {output}")

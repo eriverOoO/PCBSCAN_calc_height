@@ -176,7 +176,13 @@ ideal 준비, L0, 네 L1 profile의 quick seed, decode/report와 HTML 비교 화
 `--seeds-per-profile 2`를 추가한다. 결과 화면은
 `validation_results/automated_suite/index.html`, 기계 판독용 요약은 같은 폴더의
 `suite_summary.json`이다. case 실패가 있어도 나머지 profile을 계속 실행하고 화면에
-실패 원인을 표시한다.
+실패 원인을 표시한다. 각 case에는 decoder에 실제 전달된 4-view × 22장 입력 contact
+sheet, 결과 overview, 0°/180° valid ratio와 phase MAE/P95가 함께 표시된다.
+
+공개 CAD의 치수와 부품 배치 특성을 반영한 BME280, Simple light sensor, W5500
+source-informed profile 비교는 `run_reference_board_suite.bat`으로 실행한다. 이는 CAD
+원본의 물리 렌더가 아닌 2.5D raster 근사이며 자세한 출처와 제한은
+`docs/SIMULATION_SOURCES.md`를 따른다.
 
 ```powershell
 # 작은 L0/L1 fixture만

@@ -94,6 +94,17 @@ def build_scene_manifest(
         "backend_status": "scaffold_requires_projector_gobo_and_gt_pass_validation",
         "seed": int(seed),
         "patterns": pattern_manifest,
+        "simulation_design": {
+            "reference": "https://geometryprocessing.github.io/scanner-sim/",
+            "adapted_concepts": [
+                "independent calibrated camera and projector",
+                "custom coded-light pattern sequence",
+                "separate camera and projector focus models",
+                "object-only turntable rotation",
+                "rendered frames paired with depth and geometry ground truth",
+            ],
+            "implementation_note": "project-local Blender/Cycles boundary; no scanner-sim GPL rendering code is copied",
+        },
         "camera": {
             "model": "pinhole",
             "reference_sensor": "XIMEA IMX174",
@@ -102,11 +113,15 @@ def build_scene_manifest(
             "focal_length_mm": 35.0,
             "automatic_exposure": False,
             "frame_normalization": False,
+            "focus_model": "thin_lens_pending_calibration",
+            "pixel_coordinates": "OpenCV convention; origin at center of top-left pixel",
         },
         "projector": {
             "model": "independent_pinhole_gobo",
             "texture_sequence": "exact_22_patterns",
             "camera_fixed_for_all_views": True,
+            "focus_model": "independent_projector_lens_pending_calibration",
+            "optical_axis": "explicit calibration parameter",
         },
         "views": {
             "object_0": {"pcb_rotation_deg": 0.0, "pcb_present": True},

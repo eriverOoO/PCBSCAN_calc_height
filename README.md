@@ -516,3 +516,10 @@ pytest
 
 전체 ideal→L0→clean/normal/hard/extreme L1→비교 대시보드는
 `run_validation_suite.bat`을 실행하면 자동 생성되고 브라우저로 열립니다.
+각 case 행에서 실제 decoder 입력 4-view × 22장과 결과 overview, valid ratio 및
+phase MAE/P95를 한 화면에서 비교할 수 있습니다.
+
+Adafruit BME280, Soldered Simple light sensor, Soldered W5500의 공개 CAD에서 확인한
+보드 치수와 부품 배치 특성을 적용한 별도 비교 suite는
+`run_reference_board_suite.bat`으로 실행합니다. 세 profile의 적용 범위, 근사 한계와
+출처/라이선스는 `docs/SIMULATION_SOURCES.md`에 정리되어 있습니다.

@@ -3,8 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
+
 from pcb_fpp_decoder.decoder import DecodeConfig, PcbFppDecoder
-from validation_harness.ideal import IdealDatasetConfig, generate_ideal_dataset
+from validation_harness.ideal import (
+    BOARD_PROFILE_METADATA,
+    IdealDatasetConfig,
+    generate_ideal_dataset,
+)
 from validation_harness.manifests import inspect_pattern_sequence, sha256_file
 
 
@@ -53,3 +59,39 @@ def test_generated_object_and_reference_decode_with_production_defaults(tmp_path
     assert reference.report["mask_coverage"]["combined_mask_ratio"] > 0.99
     assert object_result.report["mask_coverage"]["combined_mask_ratio"] > 0.99
     assert int(object_result.gray.stripe_order_k.max()) > 1
+
+
+def test_open_hardware_board_profiles_have_distinct_source_informed_geometry(
+    tmp_path: Path,
+) -> None:
+    profiles = ("adafruit_bme280", "soldered_simple_light", "soldered_w5500")
+    signatures: set[tuple[int, float, int]] = set()
+    for profile in profiles:
+        dataset = generate_ideal_dataset(
+            tmp_path / profile,
+            IdealDatasetConfig(
+                width=128,
+                height=96,
+                board_profile=profile,
+                projector_period_px=12.0,
+                projector_radial_k1=-0.018,
+                projector_optical_axis_offset_px=(2.0, -1.0),
+            ),
+        )
+        manifest = json.loads((dataset / "manifest.json").read_text(encoding="utf-8"))
+        object_mask = np.load(dataset / "gt" / "object_0" / "object_mask.npy")
+        height_mm = np.load(dataset / "gt" / "object_0" / "height_mm.npy")
+        material_id = np.load(dataset / "gt" / "object_0" / "material_id.npy")
+        assert manifest["board_model"] == BOARD_PROFILE_METADATA[profile]
+        assert manifest["scanner_model"]["ground_truth_is_decoder_input"] is False
+        assert manifest["scanner_model"]["projector"]["radial_k1"] == -0.018
+        assert np.count_nonzero(object_mask) > 100
+        assert np.nanmax(height_mm) > 1.0
+        signatures.add(
+            (
+                int(np.count_nonzero(object_mask)),
+                float(np.nanmax(height_mm)),
+                int(material_id.sum()),
+            )
+        )
+    assert len(signatures) == len(profiles)

@@ -35,6 +35,10 @@ def test_pbr_manifest_preserves_actual_14_plus_exact_8_inverse_mapping(tmp_path:
     assert manifest["views"]["reference_0"]["pcb_present"] is False
     assert manifest["output"]["decoder_frames"] == "mono 16-bit PNG"
     assert manifest["backend_status"].startswith("scaffold_requires")
+    assert "independent calibrated camera and projector" in manifest["simulation_design"][
+        "adapted_concepts"
+    ]
+    assert manifest["simulation_design"]["reference"].endswith("scanner-sim/")
 
 
 def test_external_sequences_cannot_masquerade_as_production_22_frames(tmp_path: Path) -> None:
