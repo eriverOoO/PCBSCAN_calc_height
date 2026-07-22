@@ -513,3 +513,6 @@ pytest
 즉시 사용할 수 있는 4-view × 22-pattern 절차적 입력은
 `tools/generate_ideal_dataset.py`로 생성할 수 있습니다. 생성형 이미지나 임의 PCB
 사진을 decoder 입력으로 사용하지 않습니다.
+
+전체 ideal→L0→clean/normal/hard/extreme L1→비교 대시보드는
+`run_validation_suite.bat`을 실행하면 자동 생성되고 브라우저로 열립니다.

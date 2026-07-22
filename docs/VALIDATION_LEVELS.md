@@ -162,6 +162,22 @@ PBRT dataset의 Gray+6-step sine와 FPP-ML-Bench의 52 frame은 production 22 fr
 
 ## 테스트 정책
 
+### 전체 자동 실행과 한 페이지 결과
+
+프로젝트 루트에서 `run_validation_suite.bat`을 더블클릭하거나 다음 명령을 실행하면
+ideal 준비, L0, 네 L1 profile의 quick seed, decode/report와 HTML 비교 화면까지 순서대로
+처리한다. 기존 stress case는 manifest의 profile을 확인한 뒤 재사용한다.
+
+```powershell
+.venv\Scripts\python.exe tools\run_validation_suite.py --open
+```
+
+기본은 profile별 seed 1개다. 두 quick seed를 모두 실행하려면
+`--seeds-per-profile 2`를 추가한다. 결과 화면은
+`validation_results/automated_suite/index.html`, 기계 판독용 요약은 같은 폴더의
+`suite_summary.json`이다. case 실패가 있어도 나머지 profile을 계속 실행하고 화면에
+실패 원인을 표시한다.
+
 ```powershell
 # 작은 L0/L1 fixture만
 .venv\Scripts\python.exe -m pytest -q

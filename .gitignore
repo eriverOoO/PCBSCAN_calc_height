@@ -27,3 +27,6 @@ validation_phase_linear/
 *.tar.gz
 *.tgz
 *.zip
+
+# Portfolio materials are maintained separately from this project.
+eriverOoO_portfolio/
