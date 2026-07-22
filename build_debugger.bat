@@ -38,7 +38,18 @@ if errorlevel 1 goto :build_error
 set /p "PY_BASE="<"%PY_BASE_FILE%"
 if not defined PY_BASE goto :build_error
 
-set "PYI_TK=--hidden-import tkinter --hidden-import tkinter.filedialog --hidden-import tkinter.font --hidden-import tkinter.messagebox --hidden-import tkinter.simpledialog --hidden-import tkinter.ttk --hidden-import tkinter.scrolledtext --add-binary="%PY_BASE%\DLLs\_tkinter.pyd;." --add-binary="%PY_BASE%\DLLs\tcl86t.dll;." --add-binary="%PY_BASE%\DLLs\tk86t.dll;." --add-data="%PY_BASE%\Lib\tkinter;tkinter" --add-data="%PY_BASE%\tcl\tcl8.6;_tcl_data" --add-data="%PY_BASE%\tcl\tk8.6;_tk_data" --add-data="%PY_BASE%\tcl\tcl8.6;lib\tcl8.6" --add-data="%PY_BASE%\tcl\tk8.6;lib\tk8.6""
+set "PY_TK_FILE=%BUILD_DIR%\python_tk_paths.txt"
+"%PYTHON_EXE%" -c "import _tkinter, pathlib, sys, sysconfig; base=pathlib.Path(sys.base_prefix); stdlib=pathlib.Path(sysconfig.get_paths().get('stdlib') or base/'Lib'); candidates=[base/'tcl', base/'share', base/'lib']; names=('tcl8.6','tk8.6'); vals={'TKINTER_PYD': pathlib.Path(_tkinter.__file__), 'TKINTER_LIB': stdlib/'tkinter'}; [vals.setdefault(n.upper().replace('.','_') + '_DATA', d/n) for d in candidates for n in names if (d/n).exists()]; [vals.setdefault('TCL_DLL', p) for p in [base/'DLLs'/'tcl86t.dll', base/'DLLs'/'tcl86.dll', base/'bin'/'tcl86t.dll', base/'bin'/'tcl86.dll'] if p.exists()]; [vals.setdefault('TK_DLL', p) for p in [base/'DLLs'/'tk86t.dll', base/'DLLs'/'tk86.dll', base/'bin'/'tk86t.dll', base/'bin'/'tk86.dll'] if p.exists()]; pathlib.Path(r'%PY_TK_FILE%').write_text(''.join(f'{k}={v}\n' for k,v in vals.items()), encoding='utf-8')"
+if errorlevel 1 goto :build_error
+for /f "usebackq tokens=1,* delims==" %%A in ("%PY_TK_FILE%") do set "%%A=%%B"
+if not defined TKINTER_PYD goto :build_error
+if not defined TKINTER_LIB goto :build_error
+if not defined TCL8_6_DATA goto :build_error
+if not defined TK8_6_DATA goto :build_error
+
+set "PYI_TK=--hidden-import tkinter --hidden-import tkinter.filedialog --hidden-import tkinter.font --hidden-import tkinter.messagebox --hidden-import tkinter.simpledialog --hidden-import tkinter.ttk --hidden-import tkinter.scrolledtext --add-binary %TKINTER_PYD%;. --add-data %TKINTER_LIB%;tkinter --add-data %TCL8_6_DATA%;_tcl_data --add-data %TK8_6_DATA%;_tk_data --add-data %TCL8_6_DATA%;lib\tcl8.6 --add-data %TK8_6_DATA%;lib\tk8.6"
+if defined TCL_DLL set "PYI_TK=%PYI_TK% --add-binary %TCL_DLL%;."
+if defined TK_DLL set "PYI_TK=%PYI_TK% --add-binary %TK_DLL%;."
 set "PYI_COMMON=--noconfirm --onedir --distpath %DIST_DIR% --workpath %BUILD_DIR% --specpath %BUILD_DIR% --collect-data matplotlib --hidden-import matplotlib.backends.backend_agg --hidden-import mpl_toolkits.mplot3d --hidden-import scipy.ndimage --hidden-import PIL.Image --hidden-import PIL.ImageTk --hidden-import cv2 %PYI_TK% --exclude-module=pytest --exclude-module=matplotlib.tests --exclude-module=scipy.tests"
 
 echo Building debugger executable only...
