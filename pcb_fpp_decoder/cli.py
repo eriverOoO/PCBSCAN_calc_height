@@ -395,6 +395,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{result.report['mask_coverage']['combined_mask_ratio']:.3f}"
         )
         print(f"Height mode: {result.height.mode}; metric={result.height.metric}")
+    print(f"Capture diagnosis: {args.output / 'capture_diagnosis.txt'}")
     return 0
 
 

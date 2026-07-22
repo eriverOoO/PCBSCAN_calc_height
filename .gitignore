@@ -13,3 +13,21 @@ dist/
 markers/
 aruco_markers*/
 *.bat
+
+# Validation inputs/results are reproducible or externally sourced.  Keep only
+# directory placeholders, manifests, configs, and small test fixtures in Git.
+validation_data/**
+!validation_data/**/
+!validation_data/**/.gitkeep
+validation_results/
+known_failures/**/*.json
+validation_phase_linear/
+*.blend
+*.exr
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+
+# Portfolio materials are maintained separately from this project.
+eriverOoO_portfolio/
