@@ -44,6 +44,18 @@ def _load_gt_array(gt_dir: Path, stem: str) -> np.ndarray | None:
     return None
 
 
+def _load_view_gt_array(
+    gt_dir: Path,
+    view_name: str,
+    stem: str,
+    legacy_stem: str | None = None,
+) -> np.ndarray | None:
+    view_value = _load_gt_array(gt_dir / view_name, stem)
+    if view_value is not None:
+        return view_value
+    return _load_gt_array(gt_dir, legacy_stem or stem)
+
+
 class ValidationRunner:
     """Run production decode first, then evaluate outputs against isolated GT."""
 
@@ -117,29 +129,50 @@ class ValidationRunner:
 
         # Evaluation stage starts here; GT cannot influence any decode above.
         gt_dir = case / "gt"
-        phase_gt = _load_gt_array(gt_dir, "phase")
-        height_gt = _load_gt_array(gt_dir, "height_mm")
-        material_id = _load_gt_array(gt_dir, "material_id")
-        object_mask = _load_gt_array(gt_dir, "object_mask")
+        phase_gt_0 = _load_view_gt_array(
+            gt_dir, "object_0", "absolute_phase_rad", "phase"
+        )
+        phase_gt_180 = _load_view_gt_array(
+            gt_dir, "object_180", "absolute_phase_rad", "phase"
+        )
+        height_gt_0 = _load_view_gt_array(gt_dir, "object_0", "height_mm")
+        height_gt_180 = _load_view_gt_array(gt_dir, "object_180", "height_mm")
+        material_id_0 = _load_view_gt_array(gt_dir, "object_0", "material_id")
+        material_id_180 = _load_view_gt_array(gt_dir, "object_180", "material_id")
+        object_mask_0 = _load_view_gt_array(gt_dir, "object_0", "object_mask")
+        object_mask_180 = _load_view_gt_array(gt_dir, "object_180", "object_mask")
         shape = decoded_0.absolute.absolute_phase.shape
-        impairment_masks = {
+        impairment_names = (
+            "saturation",
+            "shadow",
+            "gray_boundary",
+            "hot_pixel",
+            "bit_flip",
+            "cycle_slip",
+            "registration_error",
+        )
+        impairment_masks_0 = {
             name: _read_mask(case / "masks" / "object_0" / f"{name}.png", shape)
-            for name in (
-                "saturation",
-                "shadow",
-                "gray_boundary",
-                "hot_pixel",
-                "bit_flip",
-                "cycle_slip",
-                "registration_error",
-            )
+            for name in impairment_names
         }
-        regions = build_region_masks(
+        impairment_masks_180 = {
+            name: _read_mask(case / "masks" / "object_180" / f"{name}.png", shape)
+            for name in impairment_names
+        }
+        regions_0 = build_region_masks(
             shape,
-            object_mask=object_mask,
-            material_id=material_id,
-            height_gt=height_gt,
-            impairment_masks=impairment_masks,
+            object_mask=object_mask_0,
+            material_id=material_id_0,
+            height_gt=height_gt_0,
+            impairment_masks=impairment_masks_0,
+            view_valid_masks=(decoded_0.height.mask, decoded_180.height.mask),
+        )
+        regions_180 = build_region_masks(
+            shape,
+            object_mask=object_mask_180,
+            material_id=material_id_180,
+            height_gt=height_gt_180,
+            impairment_masks=impairment_masks_180,
             view_valid_masks=(decoded_0.height.mask, decoded_180.height.mask),
         )
         fused_metric_height: np.ndarray | None = None
@@ -184,41 +217,53 @@ class ValidationRunner:
                 decoded_0.height.height,
                 decoded_0.height.mask,
                 decoded_0.height.metric,
+                phase_gt_0,
+                height_gt_0,
+                regions_0,
             ),
             "deg_180": (
                 decoded_180.absolute.absolute_phase,
                 decoded_180.height.height,
                 decoded_180.height.mask,
                 decoded_180.height.metric,
+                phase_gt_180,
+                height_gt_180,
+                regions_180,
             ),
             "fused": (
                 None,
                 fused_metric_height if fused_metric_height is not None else fused.height.height,
                 fused_metric_mask if fused_metric_mask is not None else fused.height.mask,
                 fused_metric_height is not None,
+                None,
+                height_gt_0,
+                regions_0,
             ),
         }
         summary_views: dict[str, Any] = {}
-        for view_name, (phase, height, valid, metric_height) in view_results.items():
+        for (
+            view_name,
+            (phase, height, valid, metric_height, view_phase_gt, view_height_gt, view_regions),
+        ) in view_results.items():
             summary_views[view_name] = {
                 "regions": evaluate_regions(
                     phase_prediction=phase,
-                    phase_truth=phase_gt if phase is not None else None,
+                    phase_truth=view_phase_gt if phase is not None else None,
                     height_prediction=height if metric_height else None,
-                    height_truth=height_gt if metric_height else None,
-                    regions=regions,
+                    height_truth=view_height_gt if metric_height else None,
+                    regions=view_regions,
                     valid=valid,
                 )
             }
         cycle_detected = np.asarray(decoded_0.absolute.correction_mask, dtype=bool)
-        cycle_expected = impairment_masks["cycle_slip"]
+        cycle_expected = impairment_masks_0["cycle_slip"]
         summary_views["deg_0"]["cycle_slip_detection"] = detection_statistics(
-            cycle_detected, cycle_expected, regions["pcb_all"]
+            cycle_detected, cycle_expected, regions_0["pcb_all"]
         )
         fusion_rejected = ~np.asarray(fused.height.mask, dtype=bool)
-        fusion_expected = impairment_masks["registration_error"]
+        fusion_expected = impairment_masks_0["registration_error"]
         summary_views["fused"]["fusion_rejection"] = detection_statistics(
-            fusion_rejected, fusion_expected, regions["pcb_all"]
+            fusion_rejected, fusion_expected, regions_0["pcb_all"]
         )
 
         summary = {
@@ -233,8 +278,12 @@ class ValidationRunner:
         write_overview(
             output / "overview.png",
             prediction=fused_metric_height if fused_metric_height is not None else fused.height.height,
-            truth=height_gt,
+            truth=height_gt_0 if fused_metric_height is not None else None,
             valid=fused_metric_mask if fused_metric_mask is not None else fused.height.mask,
-            title="synthetic validation overview (not hardware accuracy)",
+            title=(
+                "synthetic metric-height validation overview (not hardware accuracy)"
+                if fused_metric_height is not None
+                else "synthetic phase-domain fusion overview; no metric calibration"
+            ),
         )
         return summary

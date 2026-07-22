@@ -24,6 +24,30 @@ L0는 22장 매핑/dtype/shape, Gray normal/inverse, sine `[10,11,12,13]` 순서
 convention, 동일 reference 차감의 대수적 항등성, mask/NaN 및 파일 출력 배선을
 검사한다. 같은 합성 scene에서 얻은 보정값을 실제 정확도의 근거로 사용하지 않는다.
 
+### 절차적 ideal 데이터셋 생성
+
+생성기는 사진 합성이나 생성형 이미지 모델을 사용하지 않는다. 고정된 PCB geometry,
+재질별 albedo, component height와 projector coordinate에서 Gray/4-step sine를 직접
+계산한다. 출력은 `object_0`, `object_180`, `reference_0`, `reference_180` 각 22장의
+mono 16-bit PNG와 view별 height/phase/material/mask GT다. reference는 PCB가 없는
+빈 stage이고, 180도 view는 camera/projector가 아니라 PCB scene만 회전한다.
+
+제공된 비정렬·비초점 촬영 사진은 low-frequency illumination, defocus, 국소 포화가
+발생할 수 있다는 정성적 참고로만 기록한다. 사진의 각도, 초점, 배율 또는 pixel 값을
+geometry/calibration에 사용하지 않으며 이러한 비이상성은 ideal이 아닌 L1 profile에서
+주입한다.
+
+```powershell
+.venv\Scripts\python.exe tools\generate_ideal_dataset.py `
+  --output-root validation_data\ideal\procedural_pcb_v1 `
+  --width 512 `
+  --height 320 `
+  --seed 17
+```
+
+실제 camera 해상도 크기가 필요하면 `--width 1936 --height 1216`로 별도 폴더에
+생성한다. 생성물은 Git ignore 대상이고 manifest/config/generator만 커밋한다.
+
 ```powershell
 .venv\Scripts\python.exe tools\run_accuracy_matrix.py `
   --level l0 `

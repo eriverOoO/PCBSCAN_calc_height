@@ -89,13 +89,14 @@ def test_l0_report_leads_with_self_consistency_scope(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
-def test_full_44_frame_ideal_dataset() -> None:
+def test_full_44_frame_ideal_dataset(tmp_path: Path) -> None:
     root_value = os.environ.get("PCB_FPP_VALIDATION_ROOT")
     if not root_value:
         pytest.skip(
             "Set PCB_FPP_VALIDATION_ROOT to a dataset containing ideal/object_0 and ideal/object_180"
         )
-    root = Path(root_value) / "ideal"
+    configured = Path(root_value)
+    root = configured if (configured / "object_0").is_dir() else configured / "ideal"
     object_0 = root / "object_0"
     object_180 = root / "object_180"
     if not object_0.is_dir() or not object_180.is_dir():
@@ -105,8 +106,8 @@ def test_full_44_frame_ideal_dataset() -> None:
     inspect_pattern_sequence(object_0)
     inspect_pattern_sequence(object_180)
     PcbFppDecoder(DecodeConfig(output_profile="compact")).decode(
-        object_0, root / "_integration_result_0"
+        object_0, tmp_path / "integration_result_0"
     )
     PcbFppDecoder(DecodeConfig(output_profile="compact")).decode(
-        object_180, root / "_integration_result_180"
+        object_180, tmp_path / "integration_result_180"
     )

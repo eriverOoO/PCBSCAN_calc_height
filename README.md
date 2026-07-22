@@ -509,3 +509,7 @@ pytest
 [docs/VALIDATION_LEVELS.md](docs/VALIDATION_LEVELS.md)에 분리되어 있습니다. 이 검증
 하네스는 production decoder의 threshold, 위상/높이 계산식, fusion 기본값을 변경하지
 않으며 L0/L1 결과를 실장비 정확도로 주장하지 않습니다.
+
+즉시 사용할 수 있는 4-view × 22-pattern 절차적 입력은
+`tools/generate_ideal_dataset.py`로 생성할 수 있습니다. 생성형 이미지나 임의 PCB
+사진을 decoder 입력으로 사용하지 않습니다.

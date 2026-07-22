@@ -107,12 +107,21 @@ def inspect_pattern_sequence(root: str | Path, require_22: bool = True) -> dict[
         max_value = float(np.iinfo(arrays[0].dtype).max) if np.issubdtype(
             arrays[0].dtype, np.integer
         ) else 1.0
+        captured_pair_sum = arrays[0].astype(np.float64) + arrays[1].astype(np.float64)
         for source, inverse in zip(range(2, 10), range(14, 22)):
             residual = arrays[source].astype(np.float64) + arrays[inverse].astype(np.float64)
-            mean_error = float(np.mean(np.abs(residual - max_value)))
+            digital_error = float(np.mean(np.abs(residual - max_value)))
+            captured_error = float(np.mean(np.abs(residual - captured_pair_sum)))
+            relation = (
+                "digital_complement"
+                if digital_error <= captured_error
+                else "captured_pair_sum_white_black"
+            )
+            mean_error = min(digital_error, captured_error)
             inverse_checks[f"{source}:{inverse}"] = {
                 "mean_complement_error": mean_error,
                 "is_complement": mean_error <= max(1.0, max_value / 255.0),
+                "relation": relation,
             }
 
     return {
