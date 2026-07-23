@@ -555,3 +555,8 @@ fringe/height benchmark are opt-in and require an independently verified
 `--sha256`.
 The evidence hierarchy, accepted/rejected sources, and interpretation limits are
 documented in [`docs/SOURCE_GROUNDED_VALIDATION.md`](docs/SOURCE_GROUNDED_VALIDATION.md).
+
+## Attribution
+
+Original author: eriverOoO. This notice is retained to
+identify the original authorship of this repository.
