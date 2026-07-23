@@ -558,5 +558,5 @@ documented in [`docs/SOURCE_GROUNDED_VALIDATION.md`](docs/SOURCE_GROUNDED_VALIDA
 
 ## Attribution
 
-Original author: eriverOoO. This notice is retained to
+Original author: [eriverOoO](https://github.com/eriverOoO). This notice is retained to
 identify the original authorship of this repository.
