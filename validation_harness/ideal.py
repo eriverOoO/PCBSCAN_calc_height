@@ -224,6 +224,11 @@ def _build_generic_scene(config: IdealDatasetConfig) -> SceneMaps:
     material_id[solder] = 3
     albedo[solder] = 0.84
 
+    # Keep every generated fixture inside the project-wide physical envelope.
+    # The generic scene uses deliberately exaggerated component archetypes so
+    # clipping here is explicit and recorded rather than silently violating
+    # the requested <2 mm maximum height.
+    np.minimum(height_mm, config.reference_board_max_height_mm, out=height_mm)
     components = board & (height_mm > 0)
     return SceneMaps(
         height_mm=height_mm,

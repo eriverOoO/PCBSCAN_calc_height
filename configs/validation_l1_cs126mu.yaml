@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "validation_level": "L1",
+  "profile": "cs126mu",
+  "stress_envelope": "manufacturer-bounded CS126MU sensor model; unmeasured optics and scene effects disabled",
+  "quick_seeds": [2020, 2021],
+  "nightly_seeds": [2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027, 2028, 2029],
+  "evidence": {
+    "camera_model": "Thorlabs CS126MU",
+    "manufacturer_source": "https://www.thorlabs.com/newgrouppage9.cfm?objectgroup_id=13255",
+    "specification_date_checked": "2026-07-22",
+    "measured_or_bounded": {
+      "resolution_px": [4096, 3000],
+      "pixel_pitch_um": 3.45,
+      "adc_bits": 12,
+      "shutter": "global",
+      "full_well_electrons_min": 10650.0,
+      "read_noise_electrons_rms_max": 2.5,
+      "read_sigma_full_scale_max": 0.0002347417840375587
+    },
+    "assumption_policy": {
+      "shot_noise": "conservative use of the manufacturer minimum full-well value",
+      "read_noise": "conservative use of the manufacturer maximum RMS value",
+      "gamma": "not published for the raw acquisition path; disabled",
+      "psf": "not measured for the installed lens/focus; disabled",
+      "distortion": "not measured for the installed lens; disabled",
+      "row_column_fpn": "not published for this unit; disabled",
+      "capture_export_bit_depth": "sensor ADC modeled at 12 bit; camera-software export must be verified separately"
+    }
+  },
+  "radiometric": {
+    "pattern_gain_max_fraction": 0.0,
+    "gamma": 1.0,
+    "sine_harmonic_2": 0.0,
+    "sine_harmonic_3": 0.0,
+    "vignette": 0.0,
+    "low_frequency_gradient": 0.0,
+    "flare_fraction": 0.0,
+    "clipping_level": 1.0
+  },
+  "optics": {
+    "projector_psf_sigma_px": 0.0,
+    "camera_psf_sigma_px": 0.0,
+    "spatial_defocus_sigma_px": 0.0
+  },
+  "noise": {
+    "poisson_electrons": 10650.0,
+    "read_sigma": 0.0002347417840375587,
+    "row_sigma": 0.0,
+    "column_sigma": 0.0,
+    "fixed_pattern_sigma": 0.0,
+    "quantization_bits": 12
+  },
+  "defects": {
+    "hot_pixel_fraction": 0.0,
+    "dead_pixel_fraction": 0.0,
+    "cluster_count": 0,
+    "cluster_radius_px": 1
+  },
+  "registration": {
+    "translation_px": [0.0, 0.0],
+    "rotation_deg": [0.0, 0.0],
+    "rotation_180_center_error_px": 0.0,
+    "rotation_180_extra_deg": 0.0
+  },
+  "surface": {
+    "shadow_fraction": 0.0,
+    "shadow_expand_px": 0,
+    "shadow_transmission": 1.0,
+    "low_reflectance_scale": 1.0,
+    "metal_gain": 1.0,
+    "multipath_halo_fraction": 0.0,
+    "bloom_sigma_px": 0.0,
+    "bloom_gain": 0.0
+  },
+  "gray_stress": {
+    "boundary_gradient": 0.25,
+    "boundary_radius_px": 0,
+    "bit_flip_fraction": 0.0,
+    "cycle_slip_fraction": 0.0
+  }
+}
