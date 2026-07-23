@@ -42,11 +42,51 @@ def test_pbr_manifest_preserves_actual_14_plus_exact_8_inverse_mapping(tmp_path:
 
 
 def test_external_sequences_cannot_masquerade_as_production_22_frames(tmp_path: Path) -> None:
-    for dataset in ("pbrt_zenodo", "fpp_ml_bench"):
+    for dataset in (
+        "scanner_sim_physical",
+        "scanner_sim_calibration",
+        "scanner_sim_synthetic",
+        "pbrt_zenodo",
+        "fpp_ml_bench",
+        "hdr_net_real",
+        "3dlf_scan",
+        "gdd_physical",
+        "sk3d",
+        "pcb_dslr",
+    ):
         manifest = build_external_adapter_manifest(dataset, tmp_path / dataset)
         assert manifest["sequence_adapter"] == "submodule_only"
         assert manifest["production_22_frame_compatible"] is False
         assert manifest["rename_as_production_22_frame_sequence"] is False
+
+
+def test_scanner_sim_adapter_records_physical_evidence_and_license(tmp_path: Path) -> None:
+    manifest = build_external_adapter_manifest(
+        "scanner_sim_physical", tmp_path / "scanner_sim"
+    )
+
+    assert manifest["license"] == "CC BY 4.0"
+    assert manifest["evidence_class"] == "peer_reviewed_physical_capture_no_independent_gt"
+    assert manifest["ground_truth_available"] is False
+    assert "real_image_domain_audit" in manifest["allowed_validation_scope"]
+
+
+def test_large_external_calibration_variants_require_explicit_hash() -> None:
+    from tools.fetch_external_fpp import CATALOG
+
+    variants = CATALOG["scanner_sim_calibration"]["sample_variants"]
+    assert variants
+    assert all(item["requires_checksum"] for item in variants)
+    assert all(item["size_exact"] is False for item in variants)
+
+
+def test_real_fpp_height_benchmark_is_opt_in_and_checksum_gated() -> None:
+    from tools.fetch_external_fpp import CATALOG
+
+    item = CATALOG["gdd_physical"]["sample_variants"][0]
+    assert item["requires_checksum"] is True
+    assert item["checksum"] is None
+    assert "height" in CATALOG["gdd_physical"]["purpose"] or "height" in item["role"]
 
 
 @pytest.mark.pbr

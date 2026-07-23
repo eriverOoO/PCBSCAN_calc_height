@@ -543,3 +543,15 @@ Run `run_reference_board_suite.bat` for the source-informed Adafruit BME280,
 Soldered Simple light sensor, and Soldered W5500 comparison suite. Applied board
 dimensions, approximation limits, sources, and licenses are documented in
 [`docs/SIMULATION_SOURCES.md`](docs/SIMULATION_SOURCES.md).
+
+Run `run_source_grounded_suite.bat` for the source-grounded audit. It downloads
+and SHA-256 verifies three small physical HDR samples from scanner-sim, runs a
+CS126MU manufacturer-bounded sensor case plus a separate case that applies the
+measured physical `background.exr` as a bounded low-frequency image-domain proxy,
+and opens a landing page linking the case-by-case simulation dashboard and the
+physical/synthetic domain-gap report. The proxy is not a CS126MU PSF/gamma/noise
+calibration. Large scanner-sim calibration archives and the GDD physical
+fringe/height benchmark are opt-in and require an independently verified
+`--sha256`.
+The evidence hierarchy, accepted/rejected sources, and interpretation limits are
+documented in [`docs/SOURCE_GROUNDED_VALIDATION.md`](docs/SOURCE_GROUNDED_VALIDATION.md).

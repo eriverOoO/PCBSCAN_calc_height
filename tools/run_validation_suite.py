@@ -18,7 +18,8 @@ from validation_harness.runner import ValidationRunner
 from validation_harness.stress import generate_stress_case
 
 
-PROFILE_NAMES = ("clean", "normal", "hard", "extreme")
+PROFILE_NAMES = ("clean", "normal", "hard", "extreme", "cs126mu", "source_empirical")
+DEFAULT_PROFILE_NAMES = ("clean", "normal", "hard", "extreme", "cs126mu")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -28,19 +29,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--ideal-root",
         type=Path,
-        default=Path("validation_data/ideal/procedural_pcb_v1"),
+        default=Path("validation_data/ideal/procedural_pcb_v2"),
     )
     parser.add_argument(
         "--stress-root",
         type=Path,
-        default=Path("validation_data/stress/held_out/automated_suite"),
+        default=Path("validation_data/stress/held_out/automated_suite_v2"),
     )
     parser.add_argument(
         "--output-root",
         type=Path,
-        default=Path("validation_results/automated_suite"),
+        default=Path("validation_results/automated_suite_v2"),
     )
-    parser.add_argument("--profiles", nargs="+", choices=PROFILE_NAMES, default=list(PROFILE_NAMES))
+    parser.add_argument(
+        "--profiles", nargs="+", choices=PROFILE_NAMES, default=list(DEFAULT_PROFILE_NAMES)
+    )
     parser.add_argument("--seeds-per-profile", type=int, choices=(1, 2), default=1)
     parser.add_argument("--width", type=int, default=512)
     parser.add_argument("--height", type=int, default=320)
