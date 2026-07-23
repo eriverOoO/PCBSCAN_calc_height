@@ -17,6 +17,7 @@ from .manifests import (
     sha256_file,
     write_json,
 )
+from .source_domain import source_domain_from_profile
 
 
 VIEW_NAMES = ("object_0", "object_180", "reference_0", "reference_180")
@@ -141,6 +142,7 @@ class StressSynthesizer:
         registration = self.profile.get("registration", {})
         gray_stress = self.profile.get("gray_stress", {})
         surface = self.profile.get("surface", {})
+        source_gain, source_domain_manifest = source_domain_from_profile(self.profile, shape)
 
         gain_limit = abs(float(radiometric.get("pattern_gain_max_fraction", 0.0)))
         frame_gains = {
@@ -232,6 +234,10 @@ class StressSynthesizer:
                 blend = np.clip((xn + 1.0) / 2.0, 0.0, 1.0)
                 linear = linear * (1.0 - blend) + blurred * blend
             linear *= illumination * frame_gains[pattern_id]
+            if source_gain is not None:
+                # Physical-background proxy only; this is deliberately not
+                # interpreted as a fitted PSF/gamma/noise/distortion value.
+                linear *= source_gain
             linear[shadow_mask] *= shadow_transmission
             linear[low_reflect_mask] *= low_reflect_scale
             linear[metal_mask] *= metal_gain
@@ -275,6 +281,13 @@ class StressSynthesizer:
             linear += self._fpn
             linear[self._hot_mask] = 1.0
             linear[self._dead_mask] = 0.0
+
+            quantization_bits = int(noise.get("quantization_bits", 16))
+            if quantization_bits < 1 or quantization_bits > 16:
+                raise ValueError("noise.quantization_bits must be between 1 and 16")
+            if quantization_bits < 16:
+                adc_max = float((1 << quantization_bits) - 1)
+                linear = np.rint(np.clip(linear, 0.0, 1.0) * adc_max) / adc_max
             output[pattern_id] = np.rint(np.clip(linear, 0.0, 1.0) * 65535.0).astype(
                 np.uint16
             )
@@ -312,6 +325,7 @@ class StressSynthesizer:
                 "surface": surface,
                 "gray_stress": gray_stress,
             },
+            "source_domain": source_domain_manifest,
             "approximation": {
                 "radiometric_and_noise": "linear_radiance_domain",
                 "registration_gray_and_cycle_slip": "image_domain",
@@ -365,6 +379,19 @@ def generate_stress_case(
             f"output already exists: {destination}; choose a new output root to preserve prior results"
         )
     profile = load_config(profile_path)
+    source_domain = profile.get("source_domain")
+    if isinstance(source_domain, dict):
+        # Configs are checked into the repository and are commonly launched
+        # from another working directory (e.g. a double-clicked BAT file).
+        # Resolve repository-relative evidence paths once, before synthesis.
+        workspace = Path(__file__).resolve().parents[1]
+        for key in ("background_path", "gain_map_path"):
+            raw = source_domain.get(key)
+            if raw and not Path(raw).expanduser().is_absolute():
+                candidate = (workspace / str(raw)).resolve()
+                if not candidate.exists():
+                    candidate = (Path.cwd() / str(raw)).resolve()
+                source_domain[key] = str(candidate)
     synthesizer = StressSynthesizer(profile, seed)
     views = load_ideal_views(source_root)
     view_manifests: dict[str, Any] = {}
@@ -393,7 +420,9 @@ def generate_stress_case(
         "validation_level": "L1",
         "validation_kind": "deterministic_stress_synthesis",
         "real_world_accuracy_claim": False,
-        "stress_envelope": "uncalibrated stress envelope",
+        "stress_envelope": profile.get(
+            "stress_envelope", "uncalibrated stress envelope"
+        ),
         "seed": int(seed),
         "seed_partition": partition,
         "profile": profile,

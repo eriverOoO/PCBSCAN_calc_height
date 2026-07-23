@@ -71,6 +71,34 @@ def test_profiles_are_monotonic_and_seed_partitions_do_not_overlap() -> None:
     assert all(len(profile["nightly_seeds"]) >= 10 for profile in profiles)
 
 
+def test_cs126mu_profile_uses_only_published_sensor_bounds() -> None:
+    profile = load_config(ROOT / "configs" / "validation_l1_cs126mu.yaml")
+    sensor = profile["evidence"]["measured_or_bounded"]
+    policy = profile["evidence"]["assumption_policy"]
+
+    assert sensor["resolution_px"] == [4096, 3000]
+    assert sensor["adc_bits"] == 12
+    assert sensor["full_well_electrons_min"] == 10650.0
+    assert sensor["read_noise_electrons_rms_max"] == 2.5
+    assert profile["noise"]["quantization_bits"] == 12
+    assert profile["noise"]["read_sigma"] == pytest.approx(2.5 / 10650.0)
+    assert profile["optics"]["camera_psf_sigma_px"] == 0.0
+    assert policy["gamma"].endswith("disabled")
+    assert policy["psf"].endswith("disabled")
+    assert policy["distortion"].endswith("disabled")
+
+
+def test_cs126mu_adc_quantization_limits_output_to_4096_levels() -> None:
+    profile = load_config(ROOT / "configs" / "validation_l1_cs126mu.yaml")
+    result = StressSynthesizer(profile, 2020).synthesize(
+        _frames((72, 96)), view_name="object_0"
+    )
+
+    assert all(image.dtype == np.uint16 for image in result.images.values())
+    assert max(np.unique(image).size for image in result.images.values()) <= 4096
+    assert result.manifest["impairments"]["noise"]["quantization_bits"] == 12
+
+
 def test_same_cli_inputs_produce_identical_files(tmp_path: Path) -> None:
     ideal = tmp_path / "ideal"
     ideal.mkdir()
