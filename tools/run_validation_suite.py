@@ -18,7 +18,15 @@ from validation_harness.runner import ValidationRunner
 from validation_harness.stress import generate_stress_case
 
 
-PROFILE_NAMES = ("clean", "normal", "hard", "extreme", "cs126mu", "source_empirical")
+PROFILE_NAMES = (
+    "clean",
+    "normal",
+    "hard",
+    "extreme",
+    "cs126mu",
+    "source_empirical",
+    "ximea_observed",
+)
 DEFAULT_PROFILE_NAMES = ("clean", "normal", "hard", "extreme", "cs126mu")
 
 
@@ -66,12 +74,12 @@ def _git_head(workspace: Path) -> str:
         return "working-tree"
 
 
-def _case_matches_profile(case_dir: Path, profile_name: str) -> bool:
+def _case_matches_profile(case_dir: Path, profile: dict[str, Any]) -> bool:
     manifest_path = case_dir / "manifest.json"
     if not manifest_path.exists():
         return False
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    return manifest.get("profile", {}).get("profile") == profile_name
+    return manifest.get("profile") == profile
 
 
 def run_suite(args: argparse.Namespace) -> tuple[Path, list[dict[str, Any]]]:
@@ -119,9 +127,10 @@ def run_suite(args: argparse.Namespace) -> tuple[Path, list[dict[str, Any]]]:
             }
             try:
                 if case_dir.exists():
-                    if not _case_matches_profile(case_dir, profile_name):
+                    if not _case_matches_profile(case_dir, profile):
                         raise ValueError(
-                            f"existing case profile mismatch: {case_dir}; use another --stress-root"
+                            f"existing case config differs from {profile_path}: {case_dir}; "
+                            "use another --stress-root to preserve the prior case"
                         )
                 else:
                     generate_stress_case(

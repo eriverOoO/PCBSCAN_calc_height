@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "validation_level": "L1",
+  "profile": "ximea_observed",
+  "stress_envelope": "held-out image-domain envelope informed by nine unordered XIMEA captures; not a fitted rig model",
+  "quick_seeds": [2040, 2041],
+  "nightly_seeds": [2040, 2041, 2042, 2043, 2044, 2045, 2046, 2047, 2048, 2049],
+  "evidence": {
+    "capture_date_label": "0724pic",
+    "frame_count": 9,
+    "resolution_px": [1936, 1216],
+    "output_bits": 8,
+    "camera_metadata": {
+      "model": "MC023MG-SY-UB",
+      "serial": "CAMAU2240014",
+      "black_level_dn": 2,
+      "gain": 0,
+      "auto_exposure": 0,
+      "gamma_y_setting": 0.47,
+      "sharpness": 0,
+      "binning": [1, 1],
+      "decimation": [1, 1],
+      "sequence_index": -1,
+      "sequence_length": 0,
+      "exposure_frames_2_to_9": 13970,
+      "exposure_frame_1": 39417,
+      "exposure_unit": "not declared in TIFF metadata"
+    },
+    "source_sha256": {
+      "1.tif": "323295e76ef93e53c452ecd04004064108b2204027ad275359ed2e79202aa0d8",
+      "2.tif": "e2e38d547d5656b5cacf94f500d0bafafb503a4747897bd6d46322a4e327c09c",
+      "3.tif": "4152c774d424e308e65353938b3f7bb6b452383440d361e394e84da46e4fea0c",
+      "4.tif": "546072282a0dee39236445a3fa465d3fa8f6d702d55c0119beff3b94c6e1ef1e",
+      "5.tif": "9d1f179f868738da9910304afa82338ed997917d4a79df8c1eaa47e8b9b7bbb6",
+      "6.tif": "a95ec163ad755da165ccf02612aedecd761e3c62e09e48b073a86168dc227c1b",
+      "7.tif": "ce80d42aa0f9a4b8d3c470599f4280ea1647726f1ec6916a053e9ded7b545fb2",
+      "8.tif": "830b815c9027a20ad8609a50c182eb76759e8ca741f3b252edc34b6bb9a749d8",
+      "9.tif": "2f0216cb2ccfc0853da03205e19f864bd787ef385f7a261592ac8def96dddab1"
+    },
+    "observed_aggregate": {
+      "fraction_below_2pct": [0.5679086865, 0.6358590012, 0.8400085635],
+      "fraction_above_5pct": [0.0088583012, 0.2793491226, 0.2986794530],
+      "fraction_at_sensor_max": [0.0, 0.0510102048, 0.1110027458],
+      "low_frequency_span_p95_minus_p05": [0.0301290439, 0.5823775239, 0.9004882157],
+      "multiscale_residual_rms": [0.0091047538, 0.1164632961, 0.1753147990]
+    },
+    "safe_transfer_scope": [
+      "8-bit output quantization",
+      "black-floor and saturation occupancy envelope",
+      "central illumination footprint",
+      "low-frequency spatial nonuniformity",
+      "multiscale texture and localized highlight/shadow stress"
+    ],
+    "not_identified": [
+      "pattern identity/order",
+      "phase or height ground truth",
+      "final camera/projector pose",
+      "PSF",
+      "gamma/response curve",
+      "shot/read noise"
+    ],
+    "policy": "evaluation-only held-out seeds; do not tune production decoder thresholds from this profile"
+  },
+  "radiometric": {
+    "pattern_gain_max_fraction": 0.03,
+    "gamma": 1.0,
+    "sine_harmonic_2": 0.0,
+    "sine_harmonic_3": 0.0,
+    "vignette": 0.0,
+    "low_frequency_gradient": 0.0,
+    "flare_fraction": 0.0,
+    "clipping_level": 1.0
+  },
+  "optics": {
+    "projector_psf_sigma_px": 0.0,
+    "camera_psf_sigma_px": 0.0,
+    "spatial_defocus_sigma_px": 0.0
+  },
+  "noise": {
+    "poisson_electrons": 0.0,
+    "read_sigma": 0.0,
+    "row_sigma": 0.0,
+    "column_sigma": 0.0,
+    "fixed_pattern_sigma": 0.0,
+    "quantization_bits": 8
+  },
+  "defects": {
+    "hot_pixel_fraction": 0.0,
+    "dead_pixel_fraction": 0.0,
+    "cluster_count": 0,
+    "cluster_radius_px": 1
+  },
+  "registration": {
+    "translation_px": [0.0, 0.0],
+    "rotation_deg": [0.0, 0.0],
+    "rotation_180_center_error_px": 0.0,
+    "rotation_180_extra_deg": 0.0
+  },
+  "surface": {
+    "shadow_fraction": 0.0,
+    "shadow_expand_px": 0,
+    "shadow_transmission": 1.0,
+    "low_reflectance_scale": 1.0,
+    "metal_gain": 1.0,
+    "multipath_halo_fraction": 0.0,
+    "bloom_sigma_px": 0.0,
+    "bloom_gain": 0.0
+  },
+  "gray_stress": {
+    "boundary_gradient": 0.25,
+    "boundary_radius_px": 0,
+    "bit_flip_fraction": 0.0,
+    "cycle_slip_fraction": 0.0
+  },
+  "capture_randomization": {
+    "enabled": true,
+    "evidence_basis": "nine checksum-pinned unordered XIMEA 1936x1216 uint8 captures",
+    "transfer_scope": [
+      "output occupancy and quantization",
+      "projection footprint",
+      "low-frequency nonuniformity",
+      "multiscale texture",
+      "localized shadow/highlight stress"
+    ],
+    "not_identified": [
+      "PSF",
+      "gamma",
+      "sensor noise",
+      "camera/projector geometry",
+      "metric height"
+    ],
+    "black_level": [0.004, 0.012],
+    "response_gamma": [0.85, 1.20],
+    "dark_residual_sigma": [0.0011764706, 0.0019607843],
+    "sequence_exposure_scale": [0.90, 2.80],
+    "sequence_blur_sigma_px": [0.50, 3.00],
+    "projection_footprint": {
+      "center_x": [-0.10, 0.10],
+      "center_y": [-0.10, 0.10],
+      "half_width_fraction": [0.38, 0.56],
+      "half_height_fraction": [0.42, 0.62],
+      "rotation_deg": [-12.0, 12.0],
+      "edge_softness_fraction": [0.015, 0.060],
+      "outside_transmission": [0.0, 0.004]
+    },
+    "low_frequency_field": {
+      "gain_log_sigma": [0.12, 0.32],
+      "correlation_fraction": [0.05, 0.16]
+    },
+    "multiscale_texture": {
+      "gain_log_sigma": [0.04, 0.14],
+      "correlation_px": [2.0, 12.0]
+    },
+    "localized_shadows": {
+      "count": [2, 6],
+      "transmission": [0.04, 0.55],
+      "radius_x_fraction": [0.05, 0.22],
+      "radius_y_fraction": [0.04, 0.18]
+    },
+    "localized_highlights": {
+      "count": [1, 4],
+      "radius_fraction": [0.012, 0.070],
+      "amplitude": [0.25, 1.20]
+    }
+  }
+}

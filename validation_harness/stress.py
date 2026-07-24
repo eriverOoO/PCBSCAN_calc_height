@@ -47,6 +47,272 @@ def _odd_kernel(value: int) -> int:
     return size + 1 if size > 0 and size % 2 == 0 else size
 
 
+def _sample_float(value: Any, rng: np.random.Generator, default: float) -> float:
+    if value is None:
+        return float(default)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        raise ValueError(f"expected scalar or [minimum, maximum], got {value!r}")
+    low, high = sorted((float(value[0]), float(value[1])))
+    return float(rng.uniform(low, high)) if high > low else low
+
+
+def _sample_count(value: Any, rng: np.random.Generator, default: int = 0) -> int:
+    if value is None:
+        return int(default)
+    if isinstance(value, (int, float)):
+        return max(0, int(value))
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        raise ValueError(f"expected count or [minimum, maximum], got {value!r}")
+    low, high = sorted((int(value[0]), int(value[1])))
+    return int(rng.integers(max(0, low), max(0, high) + 1))
+
+
+def _standardized_field(
+    shape: tuple[int, int], rng: np.random.Generator, sigma: float
+) -> np.ndarray:
+    field = rng.normal(0.0, 1.0, shape).astype(np.float32)
+    if sigma > 0:
+        field = ndimage.gaussian_filter(field, sigma=sigma, mode="reflect")
+    field -= float(np.mean(field))
+    field /= max(float(np.std(field)), 1e-6)
+    return field
+
+
+def _capture_randomization_from_profile(
+    profile: Mapping[str, Any],
+    shape: tuple[int, int],
+    rng: np.random.Generator,
+) -> dict[str, Any]:
+    """Build an evaluation-only image-domain nuisance field.
+
+    This is intentionally a broad randomized proxy.  Unordered scene captures
+    cannot identify a PSF, response curve, or sensor-noise model.
+    """
+
+    section = profile.get("capture_randomization", {})
+    if not isinstance(section, Mapping) or not bool(section.get("enabled", False)):
+        return {
+            "enabled": False,
+            "gain": np.ones(shape, dtype=np.float32),
+            "glare": np.zeros(shape, dtype=np.float32),
+            "shadow_mask": np.zeros(shape, dtype=bool),
+            "footprint_dark_mask": np.zeros(shape, dtype=bool),
+            "glare_mask": np.zeros(shape, dtype=bool),
+            "black_level": 0.0,
+            "response_gamma": 1.0,
+            "dark_residual_sigma": 0.0,
+            "frame_exposure_scales": {index: 1.0 for index in range(22)},
+            "frame_blur_sigma_px": {index: 0.0 for index in range(22)},
+            "manifest": {"enabled": False, "role": "disabled"},
+        }
+
+    height, width = shape
+    yy, xx = np.indices(shape, dtype=np.float32)
+    xn = (xx - (width - 1) / 2.0) / max(width / 2.0, 1.0)
+    yn = (yy - (height - 1) / 2.0) / max(height / 2.0, 1.0)
+
+    footprint = section.get("projection_footprint", {})
+    angle_deg = _sample_float(footprint.get("rotation_deg"), rng, 0.0)
+    angle = np.deg2rad(angle_deg)
+    center_x = _sample_float(footprint.get("center_x"), rng, 0.0)
+    center_y = _sample_float(footprint.get("center_y"), rng, 0.0)
+    half_width = max(
+        0.05, _sample_float(footprint.get("half_width_fraction"), rng, 1.0)
+    )
+    half_height = max(
+        0.05, _sample_float(footprint.get("half_height_fraction"), rng, 1.0)
+    )
+    edge_softness = max(
+        1e-3, _sample_float(footprint.get("edge_softness_fraction"), rng, 0.03)
+    )
+    outside = np.clip(
+        _sample_float(footprint.get("outside_transmission"), rng, 1.0), 0.0, 1.0
+    )
+    xr = (xn - center_x) * np.cos(angle) + (yn - center_y) * np.sin(angle)
+    yr = -(xn - center_x) * np.sin(angle) + (yn - center_y) * np.cos(angle)
+    distance = np.maximum(np.abs(xr) / half_width, np.abs(yr) / half_height)
+    footprint_window = outside + (1.0 - outside) / (
+        1.0 + np.exp(np.clip((distance - 1.0) / edge_softness, -60.0, 60.0))
+    )
+    gain = footprint_window.astype(np.float32)
+    footprint_dark_mask = footprint_window < 0.5
+
+    low_field = section.get("low_frequency_field", {})
+    low_sigma_fraction = max(
+        0.005, _sample_float(low_field.get("correlation_fraction"), rng, 0.08)
+    )
+    low_log_sigma = max(
+        0.0, _sample_float(low_field.get("gain_log_sigma"), rng, 0.0)
+    )
+    if low_log_sigma:
+        field = _standardized_field(
+            shape, rng, max(1.0, min(shape) * low_sigma_fraction)
+        )
+        gain *= np.exp(np.clip(low_log_sigma * field, -1.5, 1.5)).astype(np.float32)
+
+    texture = section.get("multiscale_texture", {})
+    texture_sigma = max(
+        0.0, _sample_float(texture.get("correlation_px"), rng, 0.0)
+    )
+    texture_log_sigma = max(
+        0.0, _sample_float(texture.get("gain_log_sigma"), rng, 0.0)
+    )
+    if texture_log_sigma:
+        field = _standardized_field(shape, rng, texture_sigma)
+        gain *= np.exp(np.clip(texture_log_sigma * field, -1.0, 1.0)).astype(np.float32)
+
+    shadows = section.get("localized_shadows", {})
+    shadow_mask = np.zeros(shape, dtype=bool)
+    shadow_count = _sample_count(shadows.get("count"), rng)
+    shadow_transmission = np.clip(
+        _sample_float(shadows.get("transmission"), rng, 1.0), 0.0, 1.0
+    )
+    shadow_ellipses: list[dict[str, float]] = []
+    for _ in range(shadow_count):
+        cx = float(rng.uniform(-0.75, 0.75))
+        cy = float(rng.uniform(-0.75, 0.75))
+        rx = max(0.01, _sample_float(shadows.get("radius_x_fraction"), rng, 0.12))
+        ry = max(0.01, _sample_float(shadows.get("radius_y_fraction"), rng, 0.12))
+        theta = float(rng.uniform(-np.pi, np.pi))
+        ux = (xn - cx) * np.cos(theta) + (yn - cy) * np.sin(theta)
+        uy = -(xn - cx) * np.sin(theta) + (yn - cy) * np.cos(theta)
+        ellipse = (ux / rx) ** 2 + (uy / ry) ** 2 <= 1.0
+        shadow_mask |= ellipse
+        shadow_ellipses.append(
+            {
+                "center_x": cx,
+                "center_y": cy,
+                "radius_x_fraction": rx,
+                "radius_y_fraction": ry,
+                "rotation_deg": float(np.rad2deg(theta)),
+            }
+        )
+    gain[shadow_mask] *= shadow_transmission
+    np.clip(gain, 0.0, 4.0, out=gain)
+
+    highlights = section.get("localized_highlights", {})
+    glare = np.zeros(shape, dtype=np.float32)
+    glare_count = _sample_count(highlights.get("count"), rng)
+    glare_spots: list[dict[str, float]] = []
+    for _ in range(glare_count):
+        cx = float(rng.uniform(-0.8, 0.8))
+        cy = float(rng.uniform(-0.8, 0.8))
+        radius = max(
+            0.005, _sample_float(highlights.get("radius_fraction"), rng, 0.04)
+        )
+        amplitude = max(
+            0.0, _sample_float(highlights.get("amplitude"), rng, 0.0)
+        )
+        spot = amplitude * np.exp(
+            -0.5 * (((xn - cx) / radius) ** 2 + ((yn - cy) / radius) ** 2)
+        )
+        glare += spot.astype(np.float32)
+        glare_spots.append(
+            {
+                "center_x": cx,
+                "center_y": cy,
+                "radius_fraction": radius,
+                "amplitude": amplitude,
+            }
+        )
+    glare_mask = glare > max(0.02, float(np.max(glare)) * 0.1)
+
+    black_level = np.clip(
+        _sample_float(section.get("black_level"), rng, 0.0), 0.0, 0.25
+    )
+    response_gamma = max(
+        0.1, _sample_float(section.get("response_gamma"), rng, 1.0)
+    )
+    dark_residual_sigma = max(
+        0.0, _sample_float(section.get("dark_residual_sigma"), rng, 0.0)
+    )
+    sequence_exposure = max(
+        0.0,
+        _sample_float(
+            section.get(
+                "sequence_exposure_scale", section.get("frame_exposure_scale")
+            ),
+            rng,
+            1.0,
+        ),
+    )
+    exposure_scales = {
+        pattern_id: sequence_exposure for pattern_id in range(22)
+    }
+    sequence_blur = max(
+        0.0,
+        _sample_float(
+            section.get(
+                "sequence_blur_sigma_px", section.get("frame_blur_sigma_px")
+            ),
+            rng,
+            0.0,
+        ),
+    )
+    blur_sigma = {
+        pattern_id: sequence_blur for pattern_id in range(22)
+    }
+    gain_q = np.percentile(gain, [1.0, 5.0, 50.0, 95.0, 99.0])
+    manifest = {
+        "enabled": True,
+        "role": "held_out_image_domain_nuisance_randomization",
+        "evidence_basis": section.get("evidence_basis"),
+        "transfer_scope": section.get("transfer_scope", []),
+        "not_identified": section.get("not_identified", []),
+        "sampled": {
+            "projection_footprint": {
+                "center": [center_x, center_y],
+                "half_size_fraction": [half_width, half_height],
+                "rotation_deg": angle_deg,
+                "edge_softness_fraction": edge_softness,
+                "outside_transmission": float(outside),
+            },
+            "low_frequency_gain_log_sigma": low_log_sigma,
+            "low_frequency_correlation_fraction": low_sigma_fraction,
+            "texture_gain_log_sigma": texture_log_sigma,
+            "texture_correlation_px": texture_sigma,
+            "shadow_transmission": float(shadow_transmission),
+            "shadow_ellipses": shadow_ellipses,
+            "glare_spots": glare_spots,
+            "black_level": float(black_level),
+            "response_gamma": float(response_gamma),
+            "dark_residual_sigma": float(dark_residual_sigma),
+            "sequence_exposure_scale": float(sequence_exposure),
+            "sequence_blur_sigma_px": float(sequence_blur),
+            "frame_exposure_scales": {
+                str(key): value for key, value in exposure_scales.items()
+            },
+            "frame_blur_sigma_px": {
+                str(key): value for key, value in blur_sigma.items()
+            },
+            "gain_quantiles": {
+                str(level): float(value)
+                for level, value in zip((1, 5, 50, 95, 99), gain_q, strict=True)
+            },
+        },
+        "identifiability_warning": (
+            "randomized stress proxy from unordered captures; sampled values are "
+            "not fitted camera/projector calibration parameters"
+        ),
+    }
+    return {
+        "enabled": True,
+        "gain": gain,
+        "glare": glare,
+        "shadow_mask": shadow_mask,
+        "footprint_dark_mask": footprint_dark_mask,
+        "glare_mask": glare_mask,
+        "black_level": float(black_level),
+        "response_gamma": float(response_gamma),
+        "dark_residual_sigma": float(dark_residual_sigma),
+        "frame_exposure_scales": exposure_scales,
+        "frame_blur_sigma_px": blur_sigma,
+        "manifest": manifest,
+    }
+
+
 def _warp(image: np.ndarray, transform: Mapping[str, float], order: int) -> np.ndarray:
     angle = float(transform.get("rotation_deg", 0.0))
     shift_y = float(transform.get("translation_y_px", 0.0))
@@ -143,6 +409,7 @@ class StressSynthesizer:
         gray_stress = self.profile.get("gray_stress", {})
         surface = self.profile.get("surface", {})
         source_gain, source_domain_manifest = source_domain_from_profile(self.profile, shape)
+        capture = _capture_randomization_from_profile(self.profile, shape, rng)
 
         gain_limit = abs(float(radiometric.get("pattern_gain_max_fraction", 0.0)))
         frame_gains = {
@@ -238,6 +505,8 @@ class StressSynthesizer:
                 # Physical-background proxy only; this is deliberately not
                 # interpreted as a fitted PSF/gamma/noise/distortion value.
                 linear *= source_gain
+            if capture["enabled"]:
+                linear *= capture["gain"]
             linear[shadow_mask] *= shadow_transmission
             linear[low_reflect_mask] *= low_reflect_scale
             linear[metal_mask] *= metal_gain
@@ -249,7 +518,9 @@ class StressSynthesizer:
                 linear[half_cycle] = shifted[half_cycle]
                 shifted_whole = np.roll(linear, max(1, width // 16), axis=1)
                 linear[whole_cycle] = shifted_whole[whole_cycle]
-            linear = np.clip(linear, 0.0, None) ** gamma
+            linear = np.clip(linear, 0.0, None) ** (
+                gamma * float(capture["response_gamma"])
+            )
             if pattern_id in range(2, 10) or pattern_id in range(14, 22):
                 linear[bit_flip_mask] = 1.0 - linear[bit_flip_mask]
                 linear[whole_cycle] = 1.0 - linear[whole_cycle]
@@ -261,6 +532,19 @@ class StressSynthesizer:
             if bloom_gain and bloom_sigma:
                 bright = np.clip(linear - 0.85, 0.0, None)
                 linear += bloom_gain * ndimage.gaussian_filter(bright, bloom_sigma)
+            if capture["enabled"]:
+                # The real captures show localized saturated highlights and
+                # large black/illuminated occupancy changes.  Keep the proxy
+                # pattern-dependent so a dark frame does not receive a fully
+                # bright, physically implausible additive spot.
+                linear += capture["glare"] * np.clip(linear + 0.02, 0.0, 1.0)
+                frame_blur = float(capture["frame_blur_sigma_px"][pattern_id])
+                if frame_blur:
+                    linear = ndimage.gaussian_filter(
+                        linear, frame_blur, mode="reflect"
+                    )
+                linear *= float(capture["frame_exposure_scales"][pattern_id])
+                linear += float(capture["black_level"])
             if camera_sigma:
                 linear = ndimage.gaussian_filter(linear, camera_sigma, mode="reflect")
             linear = np.clip(linear, 0.0, clipping)
@@ -278,6 +562,10 @@ class StressSynthesizer:
             linear += rng.normal(0.0, float(noise.get("read_sigma", 0.0)), shape)
             linear += rng.normal(0.0, float(noise.get("row_sigma", 0.0)), (height, 1))
             linear += rng.normal(0.0, float(noise.get("column_sigma", 0.0)), (1, width))
+            if float(capture["dark_residual_sigma"]) > 0:
+                linear += rng.normal(
+                    0.0, float(capture["dark_residual_sigma"]), shape
+                )
             linear += self._fpn
             linear[self._hot_mask] = 1.0
             linear[self._dead_mask] = 0.0
@@ -306,6 +594,11 @@ class StressSynthesizer:
             ))
             else np.zeros(shape, dtype=bool),
         }
+        if capture["enabled"]:
+            scene_masks["capture_projection_dark"] = capture["footprint_dark_mask"]
+            scene_masks["capture_shadow"] = capture["shadow_mask"]
+            scene_masks["capture_glare"] = capture["glare_mask"]
+            scene_masks["shadow"] |= capture["shadow_mask"]
         masks = {
             name: _warp(mask.astype(np.uint8), transform, order=0) > 0
             for name, mask in scene_masks.items()
@@ -324,11 +617,18 @@ class StressSynthesizer:
                 "registration": registration,
                 "surface": surface,
                 "gray_stress": gray_stress,
+                "capture_randomization": self.profile.get(
+                    "capture_randomization", {}
+                ),
             },
             "source_domain": source_domain_manifest,
+            "capture_randomization": capture["manifest"],
             "approximation": {
                 "radiometric_and_noise": "linear_radiance_domain",
                 "registration_gray_and_cycle_slip": "image_domain",
+                "capture_randomization": (
+                    "evaluation-only image-domain proxy; no fitted optical calibration"
+                ),
             },
             "mask_names": sorted(masks),
         }
