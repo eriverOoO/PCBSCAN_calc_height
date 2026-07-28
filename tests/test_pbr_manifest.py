@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +12,10 @@ from validation_harness.pbr import (
     build_scene_manifest,
     prepare_exact_22_patterns,
 )
-from validation_harness.external import build_external_adapter_manifest
+from validation_harness.external import (
+    build_external_adapter_manifest,
+    write_external_adapter_manifest,
+)
 
 
 def _patterns(folder: Path) -> None:
@@ -69,6 +73,17 @@ def test_scanner_sim_adapter_records_physical_evidence_and_license(tmp_path: Pat
     assert manifest["evidence_class"] == "peer_reviewed_physical_capture_no_independent_gt"
     assert manifest["ground_truth_available"] is False
     assert "real_image_domain_audit" in manifest["allowed_validation_scope"]
+
+
+def test_external_adapter_manifest_writer_uses_standard_json_format(tmp_path: Path) -> None:
+    output = tmp_path / "nested" / "external_manifest.json"
+    returned = write_external_adapter_manifest("scanner_sim_physical", tmp_path, output)
+
+    assert returned == output
+    assert output.read_text(encoding="utf-8").endswith("\n")
+    assert json.loads(output.read_text(encoding="utf-8")) == (
+        build_external_adapter_manifest("scanner_sim_physical", tmp_path)
+    )
 
 
 def test_large_external_calibration_variants_require_explicit_hash() -> None:

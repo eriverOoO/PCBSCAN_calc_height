@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
+
+from .manifests import write_json
 
 
 SUPPORTED_EXTERNAL_DATASETS = {
@@ -121,16 +122,7 @@ def build_external_adapter_manifest(dataset: str, source_root: str | Path) -> di
 def write_external_adapter_manifest(
     dataset: str, source_root: str | Path, output_path: str | Path
 ) -> Path:
-    output = Path(output_path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(
-            build_external_adapter_manifest(dataset, source_root),
-            indent=2,
-            sort_keys=True,
-            ensure_ascii=False,
-        )
-        + "\n",
-        encoding="utf-8",
+    return write_json(
+        output_path,
+        build_external_adapter_manifest(dataset, source_root),
     )
-    return output

@@ -1,17 +1,4 @@
 @echo off
 setlocal
-cd /d "%~dp0"
-if not exist ".venv\Scripts\python.exe" (
-  echo Python virtual environment not found: .venv\Scripts\python.exe
-  echo Create/install the project environment first.
-  pause
-  exit /b 1
-)
-".venv\Scripts\python.exe" tools\run_source_grounded_suite.py --open %*
-set "suite_exit=%ERRORLEVEL%"
-if not "%suite_exit%"=="0" (
-  echo Source-grounded validation completed with errors.
-  echo Check validation_results\source_grounded\source_grounded_index.html
-  pause
-)
-exit /b %suite_exit%
+call "%~dp0run_validation_suite.bat" --runner "tools\run_source_grounded_suite.py" "Source-grounded validation completed with errors." "validation_results\source_grounded\source_grounded_index.html" %*
+exit /b %ERRORLEVEL%
