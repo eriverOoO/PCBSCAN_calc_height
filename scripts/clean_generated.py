@@ -18,6 +18,7 @@ DIRECT_TARGETS = (
 )
 
 DIR_GLOBS = (
+    ".pytest_tmp*",
     "tmp_debug*",
     "aruco_markers*",
     "markers",
