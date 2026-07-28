@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 from PIL import Image
 
-from pcb_fpp_decoder.aruco_alignment import estimate_aruco_transform
+from pcb_fpp_decoder.aruco_alignment import (
+    estimate_aruco_transform,
+    estimate_aruco_transform_from_images,
+)
 from pcb_fpp_decoder.aruco_marker import generate_marker_image
 from pcb_fpp_decoder.fusion_registration import estimate_and_save_fusion_transform
+from pcb_fpp_decoder.stage_precalibration import save_stage_precalibration_json
 
 
 def _target_with_four_markers() -> Image.Image:
@@ -67,6 +73,57 @@ def test_estimate_aruco_transform_from_white_pattern(tmp_path):
     assert result.point_count == 16
     assert result.reprojection_rmse_px < 0.5
     assert result.deviation_from_180_deg == pytest.approx(1.3, abs=0.3)
+    assert result.rotation_center_target_xy == pytest.approx([350.0, 350.0], abs=1.0)
+
+
+def test_stage_precalibration_from_two_standalone_images(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    if not hasattr(cv2, "aruco"):
+        pytest.skip("OpenCV ArUco module is not available")
+
+    target = np.asarray(_target_with_four_markers())
+    target_path = tmp_path / "prescan_0.png"
+    source_path = tmp_path / "prescan_250.png"
+    Image.fromarray(target).save(target_path)
+    source_matrix = cv2.getRotationMatrix2D((338.0, 362.0), 178.4, 1.0)
+    source = cv2.warpAffine(
+        target,
+        source_matrix,
+        (700, 700),
+        flags=cv2.INTER_NEAREST,
+        borderValue=255,
+    )
+    Image.fromarray(source).save(source_path)
+
+    result = estimate_aruco_transform_from_images(
+        target_path,
+        source_path,
+        marker_ids=[0, 1, 2, 3],
+        method="homography",
+    )
+    output_path = tmp_path / "stage_precalibration.json"
+    save_stage_precalibration_json(
+        output_path,
+        result,
+        image_0=target_path,
+        image_250=source_path,
+        stage_value=250,
+        dictionary_name="DICT_4X4_50",
+        method="homography",
+        ransac_threshold_px=3.0,
+    )
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["matrix"] == result.matrix
+    assert payload["stage_precalibration"]["commanded_stage_value"] == 250.0
+    assert payload["stage_precalibration"]["actual_rotation_magnitude_deg"] == pytest.approx(
+        178.4,
+        abs=0.4,
+    )
+    assert payload["stage_precalibration"]["rotation_center_target_xy"] == pytest.approx(
+        [338.0, 362.0],
+        abs=1.0,
+    )
 
 
 def test_auto_fusion_registration_saves_aruco_transform(tmp_path):

@@ -217,6 +217,34 @@ python scripts/decode_scan.py \
 
 ### ArUco 마커 기반 회전 보정
 
+#### 무조명 사전보정(권장: 실제 스캔 중 마커 검출 없음)
+
+라이트 패턴이 ArUco를 가려 실제 스캔에서 검출이 불안정하면, PCB를 올린 직후 **패턴을 투사하지 않은 상태**에서 0과 스테이지 값 250으로 각각 한 장씩만 촬영합니다. 그 뒤 PCB와 스테이지를 절대 건드리지 않고 실제 0/250 패턴 스캔을 촬영합니다. 아래 사전보정은 실제 회전각, 0도 이미지 좌표계의 회전 중심, 재투영 오차와 함께 `deg_250 → deg_0` 변환 JSON을 만듭니다. 따라서 PCB가 스테이지 정중앙에서 벗어나 있어도 그 오프셋이 변환에 포함됩니다.
+
+```powershell
+.venv\Scripts\python.exe scripts\estimate_stage_precalibration.py `
+  --image-0 captures\scan_xxx\prescan_0.png `
+  --image-250 captures\scan_xxx\prescan_250.png `
+  --stage-value 250 `
+  --ids 0,1,2,3 `
+  --output processed\scan_xxx\stage_precalibration.json
+```
+
+실제 패턴 스캔에서는 생성한 파일만 사용합니다. `--fusion-registration rotation-180`은 자동 ArUco 정합을 끄기 위한 설정이고, `--analysis-roi none`도 실제 스캔 중 ArUco ROI 검출을 끕니다.
+
+```powershell
+.venv\Scripts\python.exe scripts\decode_scan.py `
+  --input captures\scan_xxx\deg_0 `
+  --input-180 captures\scan_xxx\deg_250 `
+  --output processed\scan_xxx\fused `
+  --fusion-transform processed\scan_xxx\stage_precalibration.json `
+  --fusion-registration rotation-180 `
+  --analysis-roi none `
+  --fusion-mode modulation-weighted
+```
+
+사전보정 JSON의 `stage_precalibration.actual_rotation_magnitude_deg`가 스테이지 값 250에 대응하는 실제 회전량입니다. `rotation_center_target_xy`는 0도 이미지에서의 보정 중심입니다. 재투영 RMSE가 크면(예: 수 픽셀 이상) 두 무조명 사진의 초점/노출, 마커 가림·흐림, 또는 촬영 사이 PCB 이동을 먼저 점검해야 합니다.
+
 로테이션 스테이지가 정확히 180.00도 회전하지 않는 경우에는 PCB에 붙인 ArUco 마커를 이용해 `deg_180` 영상을 `deg_0` 좌표계로 보정할 수 있습니다. 마커 이미지는 저장소에 포함하지 않고, 필요할 때 다음 명령으로 다시 생성합니다.
 
 현재 기본 실행값은 스테이지 ArUco 마커를 사용하는 쪽입니다. 0/180 통합에서는 `--fusion-registration aruco`가 기본이고, 단일 디코딩에서도 `--analysis-roi aruco`, `--analysis-aruco-layout stage-cross`, 마커 반경 `42 mm`, 스테이지 지름 `105 mm`, PCB `30 x 30 mm`가 기본입니다. 마커가 없는 과거 촬영 데이터를 처리할 때만 `--analysis-roi none` 또는 `--fusion-registration rotation-180`을 명시하세요.

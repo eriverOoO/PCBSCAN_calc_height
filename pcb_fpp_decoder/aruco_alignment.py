@@ -50,6 +50,8 @@ class AlignmentResult:
     marker_ids: list[int]
     rotation_source_to_target_deg: float | None
     deviation_from_180_deg: float | None
+    similarity_scale: float | None
+    rotation_center_target_xy: list[float] | None
     target_markers: list[DetectedMarker]
     source_markers: list[DetectedMarker]
 
@@ -123,8 +125,33 @@ def estimate_aruco_transform(
     ransac_threshold_px: float = 3.0,
 ) -> AlignmentResult:
     marker_ids = marker_ids or [0, 1, 2, 3]
-    target_image = _load_detection_image(input_dir / image_name)
-    source_image = _load_detection_image(input_180_dir / image_name)
+    return estimate_aruco_transform_from_images(
+        Path(input_dir) / image_name,
+        Path(input_180_dir) / image_name,
+        dictionary_name=dictionary_name,
+        marker_ids=marker_ids,
+        method=method,
+        ransac_threshold_px=ransac_threshold_px,
+    )
+
+
+def estimate_aruco_transform_from_images(
+    target_image_path: Path,
+    source_image_path: Path,
+    *,
+    dictionary_name: str = "DICT_4X4_50",
+    marker_ids: list[int] | None = None,
+    method: str = "homography",
+    ransac_threshold_px: float = 3.0,
+) -> AlignmentResult:
+    """Map a rotated image into a 0-degree image using their ArUco markers.
+
+    This accepts two ordinary image paths so a no-pattern prescan can be
+    calibrated before the structured-light scan folders exist.
+    """
+    marker_ids = marker_ids or [0, 1, 2, 3]
+    target_image = _load_detection_image(Path(target_image_path))
+    source_image = _load_detection_image(Path(source_image_path))
     target_markers = _detect_markers(target_image, dictionary_name)
     source_markers = _detect_markers(source_image, dictionary_name)
 
@@ -177,7 +204,7 @@ def estimate_aruco_transform(
         transform_kind,
         inlier_mask,
     )
-    rotation_deg = _center_vector_rotation_deg(source_by_id, target_by_id, marker_ids)
+    rotation_deg, similarity_scale, rotation_center = _similarity_rotation_summary(src, dst)
     deviation_deg = None
     if rotation_deg is not None:
         deviation_deg = abs(abs(rotation_deg) - 180.0)
@@ -193,6 +220,8 @@ def estimate_aruco_transform(
         marker_ids=marker_ids,
         rotation_source_to_target_deg=rotation_deg,
         deviation_from_180_deg=deviation_deg,
+        similarity_scale=similarity_scale,
+        rotation_center_target_xy=rotation_center,
         target_markers=[target_by_id[marker_id] for marker_id in marker_ids],
         source_markers=[source_by_id[marker_id] for marker_id in marker_ids],
     )
@@ -236,6 +265,8 @@ def save_alignment_json(
             "inlier_count": result.inlier_count,
             "rotation_source_to_target_deg": result.rotation_source_to_target_deg,
             "deviation_from_180_deg": result.deviation_from_180_deg,
+            "similarity_scale": result.similarity_scale,
+            "rotation_center_target_xy": result.rotation_center_target_xy,
             "target_markers": [asdict(marker) for marker in result.target_markers],
             "source_markers": [asdict(marker) for marker in result.source_markers],
         },
@@ -356,19 +387,46 @@ def _normalize_inlier_mask(inliers: np.ndarray | None, *, point_count: int) -> n
     return mask
 
 
-def _center_vector_rotation_deg(
-    source_by_id: dict[int, DetectedMarker],
-    target_by_id: dict[int, DetectedMarker],
-    marker_ids: list[int],
-) -> float | None:
-    if len(marker_ids) < 2:
-        return None
-    first, second = marker_ids[:2]
-    source_vector = np.asarray(source_by_id[second].center) - np.asarray(source_by_id[first].center)
-    target_vector = np.asarray(target_by_id[second].center) - np.asarray(target_by_id[first].center)
-    source_angle = math.degrees(math.atan2(float(source_vector[1]), float(source_vector[0])))
-    target_angle = math.degrees(math.atan2(float(target_vector[1]), float(target_vector[0])))
-    return _normalize_degrees(target_angle - source_angle)
+def _similarity_rotation_summary(
+    source_points: np.ndarray,
+    target_points: np.ndarray,
+) -> tuple[float | None, float | None, list[float] | None]:
+    """Estimate the rigid stage-rotation summary independently of the warp."""
+    if source_points.shape[0] < 2:
+        return None, None, None
+
+    src = np.asarray(source_points, dtype=np.float64)
+    dst = np.asarray(target_points, dtype=np.float64)
+    src_mean = src.mean(axis=0)
+    dst_mean = dst.mean(axis=0)
+    src_centered = src - src_mean
+    dst_centered = dst - dst_mean
+    source_energy = float(np.sum(src_centered * src_centered))
+    if source_energy <= np.finfo(float).eps:
+        return None, None, None
+
+    covariance = src_centered.T @ dst_centered
+    u, _singular_values, vt = np.linalg.svd(covariance)
+    rotation = vt.T @ u.T
+    if np.linalg.det(rotation) < 0:
+        vt[-1, :] *= -1.0
+        rotation = vt.T @ u.T
+
+    transformed_source = src_centered @ rotation.T
+    scale = float(np.sum(transformed_source * dst_centered) / source_energy)
+    translation = dst_mean - scale * (rotation @ src_mean)
+    rotation_deg = _normalize_degrees(
+        math.degrees(math.atan2(float(rotation[1, 0]), float(rotation[0, 0])))
+    )
+
+    # For dst = s R src + t, the fixed point c satisfies (I - s R)c = t.
+    fixed_point_matrix = np.eye(2) - scale * rotation
+    if abs(float(np.linalg.det(fixed_point_matrix))) < 1e-8:
+        center = None
+    else:
+        center_array = np.linalg.solve(fixed_point_matrix, translation)
+        center = [float(center_array[0]), float(center_array[1])]
+    return rotation_deg, scale, center
 
 
 def _normalize_degrees(angle: float) -> float:
