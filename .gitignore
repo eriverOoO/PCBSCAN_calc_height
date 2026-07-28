@@ -7,6 +7,8 @@ __pycache__/
 .ruff_cache/
 tmp_debug*/
 processed/
+captures/
+diagnostics/
 build/
 dist/
 *.npy

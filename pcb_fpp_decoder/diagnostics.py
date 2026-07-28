@@ -56,6 +56,58 @@ def write_capture_diagnosis(result: Any, output_dir: Path) -> Path:
     return path
 
 
+def write_feedback_packet(result: Any, output_dir: Path, *, fusion: bool = False) -> Path:
+    """Write a compact Markdown packet intended to be pasted into a support chat."""
+    report = result.report
+    config = report.get("config", {})
+    lines = [
+        "# FPP feedback packet",
+        "",
+        "Paste this entire file when requesting analysis of this decode result.",
+        "",
+        "## Run",
+        f"- kind: {'0/180 fused' if fusion else 'single view'}",
+        f"- input: {report.get('input_dir', report.get('input_dir_0', 'unknown'))}",
+        f"- image size: {_image_size_text(report)}",
+        f"- height mode: {report.get('height', {}).get('mode', 'unknown')}",
+        f"- metric output: {report.get('height', {}).get('metric', False)}",
+        f"- units: {report.get('height', {}).get('units', 'unknown')}",
+        "",
+        "## Decoder settings",
+        f"- input color mode: {config.get('input_color_mode')}",
+        f"- phase convention: {config.get('phase_convention')}",
+        f"- phase direction: {config.get('phase_direction')}",
+        f"- min signal / modulation / Gray-pair contrast: "
+        f"{config.get('min_signal')} / {config.get('modulation_threshold')} / "
+        f"{config.get('gray_pair_min_contrast')}",
+        f"- analysis ROI: {config.get('analysis_roi_mode')}",
+        "",
+    ]
+    lines.extend(_fusion_feedback_lines(report, config) if fusion else _view_feedback_lines(report, "view"))
+    lines.extend(
+        [
+            "",
+            "## Reference and calibration",
+            f"- reference used: {report.get('height', {}).get('reference_used', False)}",
+            f"- reference scan 0: {config.get('reference_scan_0')}",
+            f"- reference scan 180: {config.get('reference_scan_180')}",
+            f"- reference phase 0: {config.get('reference_phase_0')}",
+            f"- reference phase 180: {config.get('reference_phase_180')}",
+            f"- calibration: {report.get('calibration', {}).get('path')}",
+            "",
+            "## Files to attach if requested",
+            "- decode_report.json (or fusion_report.json)",
+            "- capture_diagnosis.txt",
+            "- phase/absolute_phase_preview.png",
+            "- height/delta_phase_preview.png when a reference is used",
+            "- masks/combined_mask.png",
+        ]
+    )
+    path = Path(output_dir) / "feedback_packet.md"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
 def write_fusion_diagnosis(fusion: Any, output_dir: Path) -> Path:
     deg0 = build_capture_diagnosis(fusion.deg0)
     deg180 = build_capture_diagnosis(fusion.deg180)
@@ -101,6 +153,54 @@ def write_fusion_diagnosis(fusion: Any, output_dir: Path) -> Path:
     path = Path(output_dir) / "capture_diagnosis.txt"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8-sig")
     return path
+
+
+def _view_feedback_lines(report: dict[str, Any], label: str) -> list[str]:
+    coverage = report.get("mask_coverage", {})
+    phase = report.get("phase", {})
+    return [
+        "## Capture quality",
+        f"- {label} combined valid ratio: {_ratio_text(coverage.get('combined_mask_ratio'))}",
+        f"- {label} White/Black valid ratio: {_ratio_text(coverage.get('valid_mask_ratio'))}",
+        f"- {label} Gray valid ratio: {_ratio_text(coverage.get('gray_valid_mask_ratio'))}",
+        f"- {label} modulation valid ratio: {_ratio_text(coverage.get('modulation_mask_ratio'))}",
+        f"- cycle-slip ratio: {_ratio_text(phase.get('cycle_slip_ratio'))}",
+    ]
+
+
+def _fusion_feedback_lines(report: dict[str, Any], config: dict[str, Any]) -> list[str]:
+    fusion = report.get("fusion", {})
+    coverage = fusion.get("coverage", {})
+    lines = [
+        "## Fusion quality",
+        f"- registration: {config.get('fusion_registration', 'custom or rotation-180')}",
+        f"- transform kind: {fusion.get('transform_kind')}",
+        f"- fused valid ratio: {_ratio_text(coverage.get('fused_valid_ratio'))}",
+        f"- overlap ratio: {_ratio_text(coverage.get('overlap_ratio'))}",
+        f"- fusion rejection ratio: {_ratio_text(fusion.get('rejection_ratio'))}",
+        f"- fusion cycle-slip ratio: {_ratio_text(fusion.get('cycle_slip_ratio'))}",
+        f"- transform matrix: {fusion.get('transform_matrix')}",
+        "",
+        "## Per-view capture quality",
+    ]
+    views = report.get("views", {})
+    for angle, view_report in (("0", views.get("deg_0", {})), ("180", views.get("deg_180", {}))):
+        lines.extend(_view_feedback_lines(view_report, f"{angle} degree"))
+    return lines
+
+
+def _image_size_text(report: dict[str, Any]) -> str:
+    image_shape = report.get("image_shape", {})
+    if not image_shape:
+        return "unknown"
+    return f"{image_shape.get('width')} x {image_shape.get('height')}"
+
+
+def _ratio_text(value: Any) -> str:
+    try:
+        return f"{100.0 * float(value):.2f}%"
+    except (TypeError, ValueError):
+        return "unknown"
 
 
 def _format_capture_diagnosis(diagnosis: dict[str, Any]) -> str:

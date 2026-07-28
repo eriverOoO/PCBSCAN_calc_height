@@ -28,9 +28,15 @@ from tkinter import (
     scrolledtext,
 )
 
-from .decoder import DecodeConfig, PcbFppDecoder
+from .decoder import DecodeConfig, PcbFppDecoder, _load_transform_matrix
 from .fusion_registration import estimate_and_save_fusion_transform
-from .io import COLOR_INPUT_MODES, parse_crosstalk_matrix
+from .io import COLOR_INPUT_MODES, has_decode_pattern_files, parse_crosstalk_matrix, resolve_decode_input_dir
+from .stage_precalibration import (
+    find_stage_precalibration,
+    scan_root_for_input,
+    validate_phone_fusion_patterns,
+    validate_stage_precalibration_direction,
+)
 
 
 _DONE_TOKEN = "__PCB_FPP_DECODE_DONE__"
@@ -389,6 +395,7 @@ class DecoderGui:
         self._option_display_vars: list[StringVar] = []
         self.input_var = StringVar()
         self.input_180_var = StringVar()
+        self.stage_precalibration_status_var = StringVar(value="촬영 프로그램 정합 JSON: 미확인")
         self.output_var = StringVar()
         self.min_signal_var = StringVar(value="20")
         self.saturation_var = StringVar(value="250")
@@ -478,6 +485,13 @@ class DecoderGui:
             self.input_180_var,
             self._choose_input_180,
         )
+        Label(
+            folders,
+            textvariable=self.stage_precalibration_status_var,
+            anchor="w",
+            justify=LEFT,
+            wraplength=700,
+        ).pack(fill="x", pady=(2, 0))
         self._folder_row(folders, "출력 폴더", self.output_var, self._choose_output)
 
         height = LabelFrame(outer, text="3D / 높이", padx=8, pady=6)
@@ -724,6 +738,7 @@ class DecoderGui:
         folder = filedialog.askdirectory(title="스캔 폴더 선택")
         if folder:
             self.input_var.set(folder)
+            self._update_stage_precalibration_status(Path(folder), populate_180=True)
             if not self.output_var.get():
                 input_path = Path(folder)
                 self.output_var.set(str(Path.cwd() / "processed" / input_path.parent.name / input_path.name))
@@ -732,6 +747,7 @@ class DecoderGui:
         folder = filedialog.askdirectory(title="180도 스캔 폴더 선택")
         if folder:
             self.input_180_var.set(folder)
+            self._update_stage_precalibration_status(Path(self.input_var.get()), populate_180=False)
 
     def _choose_output(self) -> None:
         folder = filedialog.askdirectory(title="출력 폴더 선택")
@@ -812,10 +828,35 @@ class DecoderGui:
             if not output_text:
                 raise ValueError("출력 폴더를 선택해 주세요.")
 
-            input_dir = Path(input_text)
+            selected_input = Path(input_text)
+            input_dir = resolve_decode_input_dir(selected_input, preferred_angle=0)
             input_180_dir = self._optional_path(self.input_180_var)
+            if input_180_dir is not None:
+                input_180_dir = resolve_decode_input_dir(input_180_dir, preferred_angle=180)
+            else:
+                candidate = resolve_decode_input_dir(
+                    scan_root_for_input(input_dir), preferred_angle=180
+                )
+                if candidate != input_dir and has_decode_pattern_files(candidate):
+                    input_180_dir = candidate
             output_dir = Path(output_text)
             config = self._config_from_fields()
+            precomputed = self._apply_stage_precalibration(config, input_dir, input_180_dir)
+            if input_180_dir is not None:
+                missing = {
+                    "angle_000": validate_phone_fusion_patterns(input_dir),
+                    "angle_180": validate_phone_fusion_patterns(input_180_dir),
+                }
+                missing = {view: ids for view, ids in missing.items() if ids}
+                if missing:
+                    raise ValueError(
+                        "최신 PRO4500 0/180 촬영은 pattern_000~021이 필요합니다: "
+                        + "; ".join(f"{view} 누락 {ids}" for view, ids in missing.items())
+                    )
+            if config.fusion_transform is not None:
+                matrix = _load_transform_matrix(config.fusion_transform)
+                if matrix.shape not in {(2, 3), (3, 3)}:
+                    raise ValueError("합성 변환 행렬은 2x3 affine 또는 3x3 homography여야 합니다.")
             registration = self._registration_from_fields()
         except Exception as exc:
             messagebox.showerror("설정 오류", _format_exception_for_user(exc))
@@ -828,6 +869,69 @@ class DecoderGui:
             daemon=True,
         )
         thread.start()
+
+    def _apply_stage_precalibration(
+        self,
+        config: DecodeConfig,
+        input_dir: Path,
+        input_180_dir: Path | None,
+    ):
+        if config.fusion_transform is not None:
+            config.fusion_transform_source = "manual"
+            return None
+        if input_180_dir is None:
+            return None
+        precomputed = find_stage_precalibration(input_dir, input_180_dir)
+        if precomputed is None:
+            return None
+        config.fusion_transform = precomputed.path
+        config.fusion_transform_source = "precomputed_stage_precalibration"
+        config.fusion_transform_metadata = precomputed.report()
+        config.stage_precalibration_marker_ids = precomputed.marker_ids
+        self.stage_precalibration_status_var.set(self._stage_precalibration_status(precomputed))
+        return precomputed
+
+    def _update_stage_precalibration_status(
+        self, selected_input: Path, *, populate_180: bool
+    ) -> None:
+        try:
+            input_dir = resolve_decode_input_dir(selected_input, preferred_angle=0)
+            candidate = resolve_decode_input_dir(scan_root_for_input(input_dir), preferred_angle=180)
+            has_0 = has_decode_pattern_files(input_dir)
+            has_180 = candidate != input_dir and has_decode_pattern_files(candidate)
+            if populate_180 and has_180:
+                self.input_180_var.set(str(candidate))
+            precomputed = find_stage_precalibration(input_dir, candidate) if has_180 else None
+            if precomputed is None:
+                self.stage_precalibration_status_var.set(
+                    "촬영 프로그램 정합 JSON: 없음 "
+                    f"(angle_000={'발견' if has_0 else '없음'}, angle_180={'발견' if has_180 else '없음'})"
+                )
+                return
+            self.registration_aruco_var.set(0)
+            self.registration_phase_var.set(0)
+            self.registration_rotation_var.set(1)
+            self.stage_precalibration_status_var.set(self._stage_precalibration_status(precomputed))
+        except Exception as exc:
+            self.stage_precalibration_status_var.set(f"촬영 프로그램 정합 JSON 확인 실패: {exc}")
+
+    @staticmethod
+    def _stage_precalibration_status(precomputed) -> str:
+        direction_warning = validate_stage_precalibration_direction(precomputed)
+        rotation_warning = ""
+        if precomputed.actual_rotation_magnitude_deg is not None and abs(
+            precomputed.actual_rotation_magnitude_deg - 180.0
+        ) > 5.0:
+            rotation_warning = (
+                f" 경고: 실제 회전 {precomputed.actual_rotation_magnitude_deg:.2f}°"
+            )
+        direction_text = direction_warning or "180° → 0° 메타데이터 확인"
+        return (
+            "촬영 프로그램 정합 JSON 사용: "
+            f"{precomputed.path} ({precomputed.transform_kind}, marker_ids={list(precomputed.marker_ids)}, "
+            f"RMSE={precomputed.rmse_px}, {direction_text}){rotation_warning}. "
+            "자동 ArUco 정합은 실행하지 않습니다."
+        )
 
     def _config_from_fields(self) -> DecodeConfig:
         height_mode = self.height_mode_var.get()
@@ -904,6 +1008,7 @@ class DecoderGui:
             fusion_inconsistent_policy=self.fusion_inconsistent_policy_var.get(),
             fusion_center=fusion_center,
             fusion_transform=fusion_transform,
+            fusion_transform_source="manual" if fusion_transform is not None else None,
             analysis_roi_mode=analysis_roi_mode,
             analysis_aruco_dictionary=self.aruco_dictionary_var.get(),
             analysis_aruco_ids=self._parse_aruco_ids(self.analysis_aruco_ids_var.get()),
@@ -1010,11 +1115,15 @@ class DecoderGui:
                 ratio = result.report["mask_coverage"]["combined_mask_ratio"]
                 ratio_label = "통합 유효 비율"
             else:
-                if registration.mode != "rotation-180":
-                    if config.fusion_transform is not None:
-                        raise ValueError(
-                            "합성 변환 파일은 자동 합성 정합과 함께 사용할 수 없습니다."
+                if config.fusion_transform is not None:
+                    if config.fusion_transform_source == "precomputed_stage_precalibration":
+                        self.messages.put(
+                            f"촬영 프로그램 정합 JSON 사용: {config.fusion_transform}\n"
+                            "pattern_000.png 기반 자동 ArUco 정합을 건너뜁니다.\n"
                         )
+                    else:
+                        self.messages.put(f"명시 변환 파일 사용: {config.fusion_transform}\n")
+                elif registration.mode != "rotation-180":
                     estimated_transform = estimate_and_save_fusion_transform(
                         registration.mode,
                         input_dir,

@@ -18,7 +18,7 @@ from .calibration import (
     structured_light_calibration_report,
     triangulation_height,
 )
-from .diagnostics import write_capture_diagnosis, write_fusion_diagnosis
+from .diagnostics import write_capture_diagnosis, write_feedback_packet, write_fusion_diagnosis
 from .graycode import decode_gray_bits
 from .io import PatternSet, load_pattern_set, resolve_decode_input_dir, save_float01_png
 from .phase import (
@@ -102,6 +102,9 @@ class DecodeConfig:
     fusion_inconsistent_policy: str = "higher-confidence"
     fusion_center: tuple[float, float] | None = None
     fusion_transform: Path | None = None
+    fusion_transform_source: str | None = None
+    fusion_transform_metadata: dict[str, Any] | None = None
+    stage_precalibration_marker_ids: tuple[int, ...] | None = None
     analysis_roi_mode: str = "none"
     analysis_aruco_dictionary: str = "DICT_4X4_50"
     analysis_aruco_ids: tuple[int, ...] = (0, 1, 2, 3)
@@ -221,6 +224,7 @@ class PcbFppDecoder:
                 "fusion_inconsistent_policy must be higher-confidence or invalid"
             )
         self.config = config
+        self._last_analysis_roi_fallback_reason: str | None = None
 
     def load_scan(self, input_dir: Path) -> PatternSet:
         optional_inverse_ids = range(14, 14 + self.config.gray_bits)
@@ -534,6 +538,7 @@ class PcbFppDecoder:
         self, input_dir: Path, view_angle: int | None = None
     ) -> DecodeResult:
         patterns = self.load_scan(input_dir)
+        self._last_analysis_roi_fallback_reason = None
         analysis_roi = self.compute_analysis_roi(patterns)
         correction = self.compute_white_black_correction(patterns)
         if analysis_roi is not None:
@@ -558,6 +563,7 @@ class PcbFppDecoder:
             height,
             calibration,
             analysis_roi,
+            self._last_analysis_roi_fallback_reason,
         )
         return DecodeResult(
             patterns=patterns,
@@ -577,22 +583,38 @@ class PcbFppDecoder:
             return None
         if mode != "aruco":
             raise ValueError("analysis_roi_mode must be none or aruco")
-        return estimate_aruco_analysis_roi(
-            patterns.input_dir,
-            patterns.shape,
-            dictionary_name=self.config.analysis_aruco_dictionary,
-            marker_ids=self.config.analysis_aruco_ids,
-            image_name=self.config.analysis_aruco_image,
-            layout=self.config.analysis_aruco_layout,
-            workspace_width_mm=self.config.analysis_workspace_width_mm,
-            workspace_height_mm=self.config.analysis_workspace_height_mm,
-            marker_center_radius_mm=self.config.analysis_marker_center_radius_mm,
-            stage_diameter_mm=self.config.analysis_stage_diameter_mm,
-            pcb_width_mm=self.config.pcb_width_mm,
-            pcb_height_mm=self.config.pcb_height_mm,
-            pcb_margin_mm=self.config.pcb_margin_mm,
-            pcb_inset_mm=self.config.pcb_inset_mm,
-        )
+        try:
+            return estimate_aruco_analysis_roi(
+                patterns.input_dir,
+                patterns.shape,
+                dictionary_name=self.config.analysis_aruco_dictionary,
+                marker_ids=self.config.analysis_aruco_ids,
+                image_name=self.config.analysis_aruco_image,
+                layout=self.config.analysis_aruco_layout,
+                workspace_width_mm=self.config.analysis_workspace_width_mm,
+                workspace_height_mm=self.config.analysis_workspace_height_mm,
+                marker_center_radius_mm=self.config.analysis_marker_center_radius_mm,
+                stage_diameter_mm=self.config.analysis_stage_diameter_mm,
+                pcb_width_mm=self.config.pcb_width_mm,
+                pcb_height_mm=self.config.pcb_height_mm,
+                pcb_margin_mm=self.config.pcb_margin_mm,
+                pcb_inset_mm=self.config.pcb_inset_mm,
+            )
+        except (RuntimeError, ValueError) as exc:
+            marker_ids = self.config.stage_precalibration_marker_ids or ()
+            if (
+                self.config.fusion_transform_source == "precomputed_stage_precalibration"
+                and self.config.analysis_aruco_layout == "stage-cross"
+                and len(marker_ids) < 4
+            ):
+                self._last_analysis_roi_fallback_reason = (
+                    "stage_precalibration confirms only "
+                    f"{list(marker_ids)}; pattern_000.png did not provide all four "
+                    "stage-cross ROI markers, so analysis ROI was safely changed to none. "
+                    f"Detection detail: {exc}"
+                )
+                return None
+            raise
 
     def fuse_decode_results(self, deg0: DecodeResult, deg180: DecodeResult) -> FusionResult:
         h0 = deg0.height.height.astype(np.float32)
@@ -705,6 +727,7 @@ class PcbFppDecoder:
         output_dir: Path,
     ) -> FusionResult:
         output_dir = Path(output_dir).expanduser().resolve()
+        self._validate_fused_reference_configuration()
         deg0 = self._decode_in_memory(input_dir_0, view_angle=0)
         deg180 = self._decode_in_memory(input_dir_180, view_angle=180)
         fusion = self.fuse_decode_results(deg0, deg180)
@@ -712,6 +735,26 @@ class PcbFppDecoder:
         self.save_outputs(deg180, output_dir / "views" / "deg_180")
         self.save_fusion_outputs(fusion, output_dir)
         return fusion
+
+    def _validate_fused_reference_configuration(self) -> None:
+        """Prevent using one reference phase for both physical turntable views."""
+        if self.config.height_mode == "relative":
+            return
+        has_reference_0 = bool(
+            self.config.reference_phase_0 or self.config.reference_scan_0
+        )
+        has_reference_180 = bool(
+            self.config.reference_phase_180 or self.config.reference_scan_180
+        )
+        if has_reference_0 and has_reference_180:
+            return
+        raise ValueError(
+            "0/180 fused reference or metric decoding requires separate "
+            "--reference-scan-0/--reference-phase-0 and "
+            "--reference-scan-180/--reference-phase-180 inputs. A shared "
+            "reference is unsafe because the two turntable views have "
+            "different projector-camera geometry."
+        )
 
     def save_outputs(self, result: DecodeResult, output_dir: Path) -> None:
         output_dir = Path(output_dir).expanduser().resolve()
@@ -873,6 +916,7 @@ class PcbFppDecoder:
         result.report["output"] = {"profile": self.config.output_profile}
 
         write_capture_diagnosis(result, output_dir)
+        write_feedback_packet(result, output_dir)
 
         with (output_dir / "decode_report.json").open("w", encoding="utf-8") as f:
             json.dump(result.report, f, indent=2, ensure_ascii=False)
@@ -994,6 +1038,7 @@ class PcbFppDecoder:
         fusion.report["output"] = {"profile": self.config.output_profile}
 
         write_fusion_diagnosis(fusion, output_dir)
+        write_feedback_packet(fusion, output_dir, fusion=True)
 
         with (output_dir / "decode_report.json").open("w", encoding="utf-8") as f:
             json.dump(fusion.report, f, indent=2, ensure_ascii=False)
@@ -1062,6 +1107,14 @@ class PcbFppDecoder:
                 "mode": self.config.fusion_mode,
                 "transform_kind": transform_kind,
                 "transform_matrix": matrix.tolist(),
+                "transform_source": self.config.fusion_transform_source
+                or ("manual" if self.config.fusion_transform is not None else "nominal_rotation_180"),
+                "transform_path": (
+                    str(Path(self.config.fusion_transform).expanduser().resolve())
+                    if self.config.fusion_transform is not None
+                    else None
+                ),
+                "transform_metadata": self.config.fusion_transform_metadata,
                 "max_height_difference_mm": self.config.fusion_max_height_difference_mm,
                 "inconsistent_policy": self.config.fusion_inconsistent_policy,
                 "cycle_slip_ratio": float(np.count_nonzero(cycle_slip_mask) / total),
@@ -1109,6 +1162,7 @@ class PcbFppDecoder:
         height: HeightResult,
         calibration: Calibration | None,
         analysis_roi: AnalysisRoiResult | None = None,
+        analysis_roi_disabled_reason: str | None = None,
     ) -> dict[str, Any]:
         shape = patterns.shape
         total = int(np.prod(shape))
@@ -1181,7 +1235,15 @@ class PcbFppDecoder:
             "analysis_roi": (
                 analysis_roi.report
                 if analysis_roi is not None
-                else {"enabled": False, "mode": "none"}
+                else {
+                    "enabled": False,
+                    "mode": "none",
+                    **(
+                        {"reason": analysis_roi_disabled_reason}
+                        if analysis_roi_disabled_reason
+                        else {}
+                    ),
+                }
             ),
         }
         return report

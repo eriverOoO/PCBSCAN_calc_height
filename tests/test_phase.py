@@ -22,7 +22,7 @@ def test_4step_wrapped_phase_default_convention():
     assert np.max(np.abs(error)) < 1e-6
 
 
-def test_cosine_phase_diagnosis_recommends_swapped():
+def test_phase_diagnosis_does_not_select_convention_from_a_single_capture():
     phi = np.linspace(0, 4 * np.pi, 64, dtype=np.float32)[None, :]
     phi = np.repeat(phi, 4, axis=0)
     mean = 100.0
@@ -34,7 +34,8 @@ def test_cosine_phase_diagnosis_recommends_swapped():
         mean + amp * np.sin(phi),
     )
 
-    assert result["recommended"] == "swapped"
+    assert result["recommended"] is None
+    assert result["method"] == "convention_self_consistency_only"
     assert result["scores"]["swapped"] > 0.999
 
 

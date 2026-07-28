@@ -98,6 +98,13 @@ def _copy_rotated_scan(source: Path, target: Path) -> None:
         Image.fromarray(np.rot90(image, 2).astype(np.uint8)).save(target / path.name)
 
 
+def _complete_phone_pattern_contract(folder: Path) -> None:
+    """Add final input IDs 014..021 without changing the synthetic FPP signal."""
+    template = np.asarray(Image.open(folder / "pattern_013.png"))
+    for pattern_id in range(14, 22):
+        Image.fromarray(template).save(folder / f"pattern_{pattern_id:03d}.png")
+
+
 def _invalidate_columns(folder: Path, start_col: int) -> None:
     for path in folder.glob("*.png"):
         image = np.asarray(Image.open(path)).copy()
@@ -371,6 +378,125 @@ def test_cli_defaults_use_stage_aruco_settings(tmp_path):
     assert config.pcb_height_mm == 30.0
     assert config.pcb_inset_mm == 0.5
 
+    disabled = parser.parse_args(
+        [
+            "--input", str(tmp_path / "captures" / "scan_001"),
+            "--output", str(tmp_path / "processed" / "scan_001"),
+            "--no-auto-stage-precalibration",
+        ]
+    )
+    assert disabled.auto_stage_precalibration is False
+
+
+def test_cli_auto_uses_latest_stage_precalibration_without_pattern_aruco(tmp_path, monkeypatch):
+    scan_root = tmp_path / "captures" / "scan_stage_precal"
+    input_0 = scan_root / "angle_000"
+    input_180 = scan_root / "angle_180"
+    output_dir = tmp_path / "processed" / "scan_stage_precal"
+    _write_synthetic_scan(input_0)
+    _complete_phone_pattern_contract(input_0)
+    _copy_rotated_scan(input_0, input_180)
+    fixture = Path(__file__).parent / "fixtures" / "stage_precalibration_latest.json"
+    (scan_root / "stage_precalibration.json").write_text(
+        fixture.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    def should_not_run_registration(*_args, **_kwargs):
+        raise AssertionError("pattern_000.png ArUco registration must be skipped")
+
+    monkeypatch.setattr("pcb_fpp_decoder.cli.estimate_and_save_fusion_transform", should_not_run_registration)
+    exit_code = cli_main(
+        [
+            "--input", str(scan_root),
+            "--output", str(output_dir),
+            "--auto-phone-fusion",
+            "--median-filter", "0",
+        ]
+    )
+
+    assert exit_code == 0
+    report = json.loads((output_dir / "decode_report.json").read_text(encoding="utf-8"))
+    fusion = report["fusion"]
+    assert fusion["transform_source"] == "precomputed_stage_precalibration"
+    assert fusion["transform_path"].endswith("stage_precalibration.json")
+    assert fusion["transform_metadata"]["marker_ids"] == [1, 3]
+    assert fusion["transform_metadata"]["actual_rotation_magnitude_deg"] == pytest.approx(180.15)
+    assert report["views"]["deg_0"]["analysis_roi"]["mode"] == "none"
+    assert "only [1, 3]" in report["views"]["deg_0"]["analysis_roi"]["reason"]
+    assert report["fusion"]["coverage"]["fused_valid_ratio"] > 0.95
+
+
+def test_explicit_fusion_transform_remains_higher_priority_than_auto_registration(tmp_path, monkeypatch):
+    input_0 = tmp_path / "captures" / "manual_transform" / "angle_000"
+    input_180 = tmp_path / "captures" / "manual_transform" / "angle_180"
+    output_dir = tmp_path / "processed" / "manual_transform"
+    _write_synthetic_scan(input_0)
+    _copy_rotated_scan(input_0, input_180)
+    transform = tmp_path / "manual_transform.json"
+    transform.write_text(
+        json.dumps({"homography": [[-1, 0, 79], [0, -1, 47], [0, 0, 1]]}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "pcb_fpp_decoder.cli.estimate_and_save_fusion_transform",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not register")),
+    )
+    exit_code = cli_main(
+        [
+            "--input", str(input_0), "--input-180", str(input_180),
+            "--output", str(output_dir), "--fusion-transform", str(transform),
+            "--analysis-roi", "none", "--median-filter", "0",
+        ]
+    )
+    assert exit_code == 0
+    report = json.loads((output_dir / "decode_report.json").read_text(encoding="utf-8"))
+    assert report["fusion"]["transform_source"] == "manual"
+    assert report["fusion"]["transform_path"] == str(transform.resolve())
+
+
+def test_stage_precalibration_uses_stage_cross_only_when_four_pattern_markers_exist(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    if not hasattr(cv2, "aruco"):
+        pytest.skip("OpenCV ArUco module is not available")
+    scan_root = tmp_path / "captures" / "scan_stage_cross"
+    input_0 = scan_root / "angle_000"
+    input_180 = scan_root / "angle_180"
+    output_dir = tmp_path / "processed" / "scan_stage_cross"
+    _write_synthetic_scan(input_0, width=240, height=240)
+    _paste_stage_cross_aruco_markers(input_0)
+    _copy_rotated_scan(input_0, input_180)
+    transform = scan_root / "stage_precalibration.json"
+    transform.write_text(
+        json.dumps(
+            {
+                "matrix": [[-1, 0, 239], [0, -1, 239], [0, 0, 1]],
+                "homography": [[-1, 0, 239], [0, -1, 239], [0, 0, 1]],
+                "transform_kind": "homography",
+                "transform_direction": "180_to_0",
+                "aruco": {"marker_ids": [1, 3]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = DecodeConfig(
+        fusion_transform=transform,
+        fusion_transform_source="precomputed_stage_precalibration",
+        stage_precalibration_marker_ids=(1, 3),
+        analysis_roi_mode="aruco",
+        analysis_aruco_layout="stage-cross",
+        analysis_aruco_ids=(0, 1, 2, 3),
+        analysis_marker_center_radius_mm=42.0,
+        analysis_stage_diameter_mm=105.0,
+        pcb_width_mm=30.0,
+        pcb_height_mm=30.0,
+        median_filter=0,
+    )
+    result = PcbFppDecoder(config).decode_fused(input_0, input_180, output_dir)
+
+    assert result.report["views"]["deg_0"]["analysis_roi"]["enabled"] is True
+    assert result.report["views"]["deg_0"]["analysis_roi"]["layout"] == "stage-cross"
+
 
 def test_phone_capture_metadata_is_reported(tmp_path):
     input_dir = tmp_path / "captures" / "scan_phone" / "angle_000"
@@ -633,6 +759,7 @@ def test_fused_0_180_scan_fills_shadow_region(tmp_path):
     assert (output_dir / "height" / "height_fused.npy").exists()
     assert (output_dir / "views" / "deg_0" / "decode_report.json").exists()
     assert (output_dir / "views" / "deg_180" / "decode_report.json").exists()
+    assert (output_dir / "feedback_packet.md").exists()
     diagnosis = (output_dir / "capture_diagnosis.txt").read_text(encoding="utf-8-sig")
     assert "0/180 촬영 자동 진단" in diagnosis
     assert "0도:" in diagnosis
@@ -641,3 +768,18 @@ def test_fused_0_180_scan_fills_shadow_region(tmp_path):
     assert result.report["fusion"]["coverage"]["fused_valid_ratio"] > (
         result.deg0.report["mask_coverage"]["combined_mask_ratio"]
     )
+
+
+def test_fused_reference_decode_requires_per_view_references(tmp_path):
+    input_0 = tmp_path / "captures" / "scan_ref_guard" / "deg_0"
+    input_180 = tmp_path / "captures" / "scan_ref_guard" / "deg_180"
+    reference = tmp_path / "captures" / "reference"
+    _write_synthetic_scan(input_0)
+    _copy_rotated_scan(input_0, input_180)
+    _write_synthetic_scan(reference)
+
+    decoder = PcbFppDecoder(
+        DecodeConfig(height_mode="reference", reference_scan=reference)
+    )
+    with pytest.raises(ValueError, match="separate --reference-scan-0"):
+        decoder.decode_fused(input_0, input_180, tmp_path / "processed")

@@ -15,6 +15,11 @@ from .io import (
     parse_crosstalk_matrix,
     resolve_decode_input_dir,
 )
+from .stage_precalibration import (
+    StagePrecalibration,
+    find_stage_precalibration,
+    validate_phone_fusion_patterns,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -48,6 +53,13 @@ def build_parser() -> argparse.ArgumentParser:
             "If --input is a PRO4500 phone scan root containing angle_000 and "
             "angle_180 decode folders, fuse them without passing --input-180."
         ),
+    )
+    parser.add_argument(
+        "--no-auto-stage-precalibration",
+        dest="auto_stage_precalibration",
+        action="store_false",
+        default=True,
+        help="Do not automatically use <scan root>/stage_precalibration.json for 0/180 fusion.",
     )
     parser.add_argument("--output", required=True, type=Path, help="Output processed folder")
     parser.add_argument("--projector-width", type=int, default=1280)
@@ -363,6 +375,9 @@ def config_from_args(args: argparse.Namespace) -> DecodeConfig:
         fusion_inconsistent_policy=args.fusion_inconsistent_policy,
         fusion_center=tuple(args.fusion_center) if args.fusion_center else None,
         fusion_transform=args.fusion_transform,
+        fusion_transform_source=getattr(args, "fusion_transform_source", None),
+        fusion_transform_metadata=getattr(args, "fusion_transform_metadata", None),
+        stage_precalibration_marker_ids=getattr(args, "stage_precalibration_marker_ids", None),
         analysis_roi_mode=analysis_roi_mode,
         analysis_aruco_dictionary=args.analysis_aruco_dictionary,
         analysis_aruco_ids=tuple(args.analysis_aruco_ids),
@@ -402,6 +417,22 @@ def main(argv: list[str] | None = None) -> int:
             )
         args.input_180 = candidate
 
+    try:
+        stage_precalibration = _prepare_stage_precalibration(args)
+    except (ValueError, FileNotFoundError) as exc:
+        parser.error(str(exc))
+    if stage_precalibration is not None:
+        missing_by_view = {
+            "angle_000": validate_phone_fusion_patterns(args.input),
+            "angle_180": validate_phone_fusion_patterns(args.input_180),
+        }
+        missing = {view: values for view, values in missing_by_view.items() if values}
+        if missing:
+            parser.error(
+                "PRO4500 0/180 fusion requires pattern_000.png through pattern_021.png; "
+                + "; ".join(f"{view} missing {values}" for view, values in missing.items())
+            )
+
     config = config_from_args(args)
     try:
         estimated_transform = _prepare_fusion_registration(args, config) if args.input_180 else None
@@ -420,6 +451,9 @@ def main(argv: list[str] | None = None) -> int:
         if estimated_transform is not None:
             print(estimated_transform.summary)
             print(f"Fusion transform: {estimated_transform.path}")
+        if stage_precalibration is not None:
+            print("Using capture-program alignment JSON (precomputed_stage_precalibration)")
+            print(f"Fusion transform: {stage_precalibration.path}")
         print(
             "Fused valid ratio: "
             f"{result.report['fusion']['coverage']['fused_valid_ratio']:.3f}"
@@ -446,10 +480,9 @@ def _prepare_fusion_registration(
     if not args.input_180:
         raise ValueError("--fusion-registration requires --input-180")
     if args.fusion_transform is not None:
-        raise ValueError(
-            "--fusion-transform cannot be combined with --fusion-registration; "
-            "choose either a precomputed transform or automatic registration"
-        )
+        # Explicit or capture-program transforms always take precedence over
+        # automatic ArUco/phase registration.
+        return None
 
     marker_ids = parse_marker_ids(args.aruco_ids) if args.fusion_registration == "aruco" else ()
     estimated_transform = estimate_and_save_fusion_transform(
@@ -469,6 +502,28 @@ def _prepare_fusion_registration(
     if estimated_transform is not None:
         config.fusion_transform = estimated_transform.path
     return estimated_transform
+
+
+def _prepare_stage_precalibration(args: argparse.Namespace) -> StagePrecalibration | None:
+    """Apply the capture-program transform before automatic registration is considered."""
+    args.fusion_transform_source = "manual" if args.fusion_transform is not None else None
+    args.fusion_transform_metadata = None
+    args.stage_precalibration_marker_ids = None
+    if (
+        args.input_180 is None
+        or args.fusion_transform is not None
+        or not args.auto_stage_precalibration
+    ):
+        return None
+
+    precomputed = find_stage_precalibration(args.input, args.input_180)
+    if precomputed is None:
+        return None
+    args.fusion_transform = precomputed.path
+    args.fusion_transform_source = "precomputed_stage_precalibration"
+    args.fusion_transform_metadata = precomputed.report()
+    args.stage_precalibration_marker_ids = precomputed.marker_ids
+    return precomputed
 
 
 def _parse_crosstalk_matrix_arg(text: str):

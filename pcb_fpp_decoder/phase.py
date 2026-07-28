@@ -48,11 +48,14 @@ def diagnose_phase_conventions(
     i180: np.ndarray,
     i270: np.ndarray,
 ) -> dict[str, object]:
-    """Score cosine-family convention fitness on the first and center rows.
+    """Report convention-dependent self-consistency scores without choosing one.
 
-    The cosine convention expects ``I0-I180 = cos(phi)`` and
-    ``I270-I90 = sin(phi)``.  A normalized vector dot product gives a score
-    in [-1, 1] without depending on albedo or modulation amplitude.
+    A single four-step capture has no absolute phase reference: swapping the
+    quadrature axes can be made to score perfectly by changing the definition
+    of the expected sine/cosine pair.  Therefore the capture alone must not
+    select a phase convention.  Select it from the projector pattern contract
+    or a known-height calibration target, then use the same value for object
+    and reference scans.
     """
     arrays = tuple(np.asarray(image, dtype=np.float32) for image in (i0, i90, i180, i270))
     if any(image.ndim != 2 for image in arrays):
@@ -86,14 +89,17 @@ def diagnose_phase_conventions(
         row_scores[convention] = per_row
         scores[convention] = float(np.mean(values)) if values else None
 
-    finite_scores = {key: value for key, value in scores.items() if value is not None}
-    recommended = max(finite_scores, key=finite_scores.get) if finite_scores else None
     return {
-        "method": "cosine_quadrature_first_and_center_rows",
+        "method": "convention_self_consistency_only",
         "sample_rows": list(rows),
         "scores": scores,
         "row_scores": row_scores,
-        "recommended": recommended,
+        "recommended": None,
+        "interpretation": (
+            "No convention is selected from a single capture. Configure the "
+            "phase convention using the projected-pattern contract or a "
+            "known-height calibration target."
+        ),
     }
 
 

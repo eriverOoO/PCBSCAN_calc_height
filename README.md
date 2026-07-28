@@ -180,7 +180,7 @@ captures/<scan_id>/
 
 CLI 기본 출력은 `compact` 프로필입니다. 보고서, 미리보기 PNG, 재사용에 필요한 핵심 `.npy`만 저장하고 보정 프레임 전체, 중간 배열 묶음, PLY 포인트 클라우드는 남기지 않습니다. 전체 진단 산출물이 필요할 때만 `--output-profile full`을 추가하세요.
 
-다른 각도를 직접 지정하려면 `--input-angle 180`처럼 지정합니다. 같은 스캔 루트에 `angle_000`과 `angle_180`이 모두 있고 바로 통합하려면 `--auto-phone-fusion`을 사용할 수 있습니다.
+다른 각도를 직접 지정하려면 `--input-angle 180`처럼 지정합니다. 같은 스캔 루트에 `angle_000`과 `angle_180`이 모두 있고 바로 통합하려면 `--auto-phone-fusion`을 사용할 수 있습니다. 최신 PRO4500 촬영이 스캔 루트에 `stage_precalibration.json`을 함께 저장했다면 디코더는 이를 자동으로 찾아 `180° → 0°` homography로 사용하고, `pattern_000.png` ArUco 재정합은 실행하지 않습니다. `--fusion-transform`은 항상 이 자동 선택보다 우선하며, 자동 탐색을 끄려면 `--no-auto-stage-precalibration`을 사용하세요. 프리스캔이 반대편 2마커만 확인한 경우에는 실제 `pattern_000.png`에서 4개의 ROI 마커가 검출될 때만 stage-cross ROI를 적용하고, 그렇지 않으면 안전하게 ROI를 사용하지 않습니다.
 
 ```powershell
 .venv\Scripts\python.exe scripts\decode_scan.py `
