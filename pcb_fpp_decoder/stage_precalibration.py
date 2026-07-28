@@ -17,14 +17,31 @@ from .aruco_alignment import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Create a reusable 0/250 stage fusion transform from two no-pattern "
-            "ArUco images. The output can be passed directly to decode_scan.py."
+            "Create a reusable nominal-180-degree fusion transform from two "
+            "no-pattern ArUco images. The rotated image is captured after a "
+            "stage command value such as 250; that value is not an angle."
         )
     )
     parser.add_argument("--image-0", required=True, type=Path, help="No-pattern image at stage value 0")
-    parser.add_argument("--image-250", required=True, type=Path, help="No-pattern image after stage value 250")
+    parser.add_argument(
+        "--image-rotated",
+        required=True,
+        type=Path,
+        help="No-pattern image after the nominal-180-degree stage command",
+    )
     parser.add_argument("--output", required=True, type=Path, help="Output reusable fusion-transform JSON")
-    parser.add_argument("--stage-value", type=float, default=250.0, help="Commanded stage value for the rotated image")
+    parser.add_argument(
+        "--stage-command-value",
+        type=float,
+        default=250.0,
+        help="Program value sent to the stage; it is not degrees (default: 250)",
+    )
+    parser.add_argument(
+        "--intended-rotation-deg",
+        type=float,
+        default=180.0,
+        help="Physical rotation intended by the stage command (default: 180)",
+    )
     parser.add_argument(
         "--dictionary", default="DICT_4X4_50", choices=sorted(ARUCO_DICTIONARIES), help="OpenCV ArUco dictionary"
     )
@@ -41,8 +58,9 @@ def save_stage_precalibration_json(
     result: AlignmentResult,
     *,
     image_0: Path,
-    image_250: Path,
-    stage_value: float,
+    image_rotated: Path,
+    stage_command_value: float,
+    intended_rotation_deg: float,
     dictionary_name: str,
     method: str,
     ransac_threshold_px: float,
@@ -52,17 +70,18 @@ def save_stage_precalibration_json(
         output_path,
         result,
         input_dir=image_0.parent,
-        input_180_dir=image_250.parent,
+        input_180_dir=image_rotated.parent,
         dictionary_name=dictionary_name,
         image_name=image_0.name,
         method=method,
         ransac_threshold_px=ransac_threshold_px,
     )
     payload: dict[str, Any] = json.loads(output_path.read_text(encoding="utf-8"))
-    payload["source"] = {"role": "stage-rotated", "image": str(image_250)}
+    payload["source"] = {"role": "stage-rotated", "image": str(image_rotated)}
     payload["target"] = {"role": "stage-0", "image": str(image_0)}
     payload["stage_precalibration"] = {
-        "commanded_stage_value": float(stage_value),
+        "commanded_stage_value": float(stage_command_value),
+        "intended_rotation_deg": float(intended_rotation_deg),
         "actual_rotation_magnitude_deg": (
             abs(float(result.rotation_source_to_target_deg))
             if result.rotation_source_to_target_deg is not None
@@ -85,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
         marker_ids = parse_marker_ids(args.ids)
         result = estimate_aruco_transform_from_images(
             args.image_0,
-            args.image_250,
+            args.image_rotated,
             dictionary_name=args.dictionary,
             marker_ids=marker_ids,
             method=args.method,
@@ -95,8 +114,9 @@ def main(argv: list[str] | None = None) -> int:
             args.output,
             result,
             image_0=args.image_0,
-            image_250=args.image_250,
-            stage_value=args.stage_value,
+            image_rotated=args.image_rotated,
+            stage_command_value=args.stage_command_value,
+            intended_rotation_deg=args.intended_rotation_deg,
             dictionary_name=args.dictionary,
             method=args.method,
             ransac_threshold_px=args.ransac_threshold_px,
@@ -105,7 +125,8 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"error: {exc}") from exc
 
     print(f"Saved stage precalibration: {args.output}")
-    print(f"Commanded stage value: {args.stage_value:g}")
+    print(f"Commanded stage value: {args.stage_command_value:g} (not degrees)")
+    print(f"Intended physical rotation: {args.intended_rotation_deg:g} deg")
     if result.rotation_source_to_target_deg is not None:
         print(
             "Actual rotation magnitude: "

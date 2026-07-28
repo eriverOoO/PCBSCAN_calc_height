@@ -106,8 +106,9 @@ def test_stage_precalibration_from_two_standalone_images(tmp_path):
         output_path,
         result,
         image_0=target_path,
-        image_250=source_path,
-        stage_value=250,
+        image_rotated=source_path,
+        stage_command_value=250,
+        intended_rotation_deg=180,
         dictionary_name="DICT_4X4_50",
         method="homography",
         ransac_threshold_px=3.0,
@@ -116,6 +117,7 @@ def test_stage_precalibration_from_two_standalone_images(tmp_path):
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["matrix"] == result.matrix
     assert payload["stage_precalibration"]["commanded_stage_value"] == 250.0
+    assert payload["stage_precalibration"]["intended_rotation_deg"] == 180.0
     assert payload["stage_precalibration"]["actual_rotation_magnitude_deg"] == pytest.approx(
         178.4,
         abs=0.4,

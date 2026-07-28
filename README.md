@@ -219,13 +219,14 @@ python scripts/decode_scan.py \
 
 #### 무조명 사전보정(권장: 실제 스캔 중 마커 검출 없음)
 
-라이트 패턴이 ArUco를 가려 실제 스캔에서 검출이 불안정하면, PCB를 올린 직후 **패턴을 투사하지 않은 상태**에서 0과 스테이지 값 250으로 각각 한 장씩만 촬영합니다. 그 뒤 PCB와 스테이지를 절대 건드리지 않고 실제 0/250 패턴 스캔을 촬영합니다. 아래 사전보정은 실제 회전각, 0도 이미지 좌표계의 회전 중심, 재투영 오차와 함께 `deg_250 → deg_0` 변환 JSON을 만듭니다. 따라서 PCB가 스테이지 정중앙에서 벗어나 있어도 그 오프셋이 변환에 포함됩니다.
+라이트 패턴이 ArUco를 가려 실제 스캔에서 검출이 불안정하면, PCB를 올린 직후 **패턴을 투사하지 않은 상태**에서 0과 **스테이지 프로그램 명령값 250**으로 각각 한 장씩만 촬영합니다. 이 250은 각도가 아니라, **실제 180° 회전을 의도한 장비 제어값**입니다. 그 뒤 PCB와 스테이지를 절대 건드리지 않고 실제 0°/명목 180° 패턴 스캔을 촬영합니다. 아래 사전보정은 실제 회전각, 0도 이미지 좌표계의 회전 중심, 재투영 오차와 함께 회전 뷰를 0도 뷰로 보내는 변환 JSON을 만듭니다. 따라서 PCB가 스테이지 정중앙에서 벗어나 있어도 그 오프셋이 변환에 포함됩니다.
 
 ```powershell
 .venv\Scripts\python.exe scripts\estimate_stage_precalibration.py `
   --image-0 captures\scan_xxx\prescan_0.png `
-  --image-250 captures\scan_xxx\prescan_250.png `
-  --stage-value 250 `
+  --image-rotated captures\scan_xxx\prescan_nominal_180.png `
+  --stage-command-value 250 `
+  --intended-rotation-deg 180 `
   --ids 0,1,2,3 `
   --output processed\scan_xxx\stage_precalibration.json
 ```
@@ -235,7 +236,7 @@ python scripts/decode_scan.py \
 ```powershell
 .venv\Scripts\python.exe scripts\decode_scan.py `
   --input captures\scan_xxx\deg_0 `
-  --input-180 captures\scan_xxx\deg_250 `
+  --input-180 captures\scan_xxx\deg_180 `
   --output processed\scan_xxx\fused `
   --fusion-transform processed\scan_xxx\stage_precalibration.json `
   --fusion-registration rotation-180 `
@@ -243,7 +244,7 @@ python scripts/decode_scan.py \
   --fusion-mode modulation-weighted
 ```
 
-사전보정 JSON의 `stage_precalibration.actual_rotation_magnitude_deg`가 스테이지 값 250에 대응하는 실제 회전량입니다. `rotation_center_target_xy`는 0도 이미지에서의 보정 중심입니다. 재투영 RMSE가 크면(예: 수 픽셀 이상) 두 무조명 사진의 초점/노출, 마커 가림·흐림, 또는 촬영 사이 PCB 이동을 먼저 점검해야 합니다.
+사전보정 JSON의 `stage_precalibration.commanded_stage_value`는 프로그램에 넣은 값(예: `250`)이고, `actual_rotation_magnitude_deg`가 그 명령에 대응하는 **실측 회전량**입니다. `intended_rotation_deg`는 명목 목표값(기본 `180`)입니다. `rotation_center_target_xy`는 0도 이미지에서의 보정 중심입니다. 재투영 RMSE가 크면(예: 수 픽셀 이상) 두 무조명 사진의 초점/노출, 마커 가림·흐림, 또는 촬영 사이 PCB 이동을 먼저 점검해야 합니다.
 
 로테이션 스테이지가 정확히 180.00도 회전하지 않는 경우에는 PCB에 붙인 ArUco 마커를 이용해 `deg_180` 영상을 `deg_0` 좌표계로 보정할 수 있습니다. 마커 이미지는 저장소에 포함하지 않고, 필요할 때 다음 명령으로 다시 생성합니다.
 
@@ -352,7 +353,9 @@ ArUco 마커 없이 로테이션 스테이지의 중심은 대략 맞지만, 180
 python scripts/run_gui.py
 ```
 
-그래픽 화면에서는 입력/출력 폴더, 기준 scan 또는 기준 phase, 보정 설정 파일, 높이 모드, 임계값을 선택한 뒤 `Run decode`를 누르면 같은 파이프라인이 실행됩니다. `reference`, `triangulation`, `inverse-linear` 모드에서는 기준 phase 또는 기준 scan이 필요합니다.
+그래픽 화면에서는 입력/출력 폴더, 보정 설정 파일, 높이 모드, 임계값을 선택한 뒤 `Run decode`를 누르면 같은 파이프라인이 실행됩니다. 일반 스캔에는 관리자 모드에서 검증·저장한 0°/180° 기준면 위상이 자동 적용됩니다. 저장된 기준면이 없으면 일반 디코딩은 시작되지 않습니다.
+
+관리자 모드의 `기준면 검증 및 영구 저장`에서 빈 스테이지의 0°와 180° 스캔 폴더를 각각 지정합니다. 각 촬영은 대상 스캔과 같은 22개 패턴·노출·초점 설정을 사용해야 합니다. 프로그램은 충분한 유효 영역, 기준 평면 잔차, 국소 이상치 비율을 확인해 PCB 등 물체가 남은 기준면을 거부하며, 통과한 두 `absolute_phase` 배열을 `%LOCALAPPDATA%\PCB_FPP_Decoder\flat_stage_reference`에 저장합니다. 새 기준면이 검증을 통과하면 기존 기준면을 교체합니다.
 
 ## 디버거 실행 (개발용)
 

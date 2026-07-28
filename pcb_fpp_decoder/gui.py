@@ -4,7 +4,7 @@ import queue
 import re
 import threading
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from tkinter import (
     BOTH,
@@ -30,10 +30,12 @@ from tkinter import (
 
 from .decoder import DecodeConfig, PcbFppDecoder
 from .fusion_registration import estimate_and_save_fusion_transform
-from .io import COLOR_INPUT_MODES, parse_crosstalk_matrix
+from .io import COLOR_INPUT_MODES, parse_crosstalk_matrix, resolve_decode_input_dir
+from .reference_store import ReferenceStore, validate_flat_stage
 
 
 _DONE_TOKEN = "__PCB_FPP_DECODE_DONE__"
+_REFERENCE_DONE_TOKEN = "__PCB_FPP_REFERENCE_DONE__"
 
 _OPTION_LABELS = {
     "relative": "상대 위상 (phase units)",
@@ -402,7 +404,7 @@ class DecoderGui:
         self.gray_pair_contrast_var = StringVar(value="0.05")
         self.phase_convention_var = StringVar(value="default")
         self.phase_direction_var = StringVar(value="normal")
-        self.height_mode_var = StringVar(value="relative")
+        self.height_mode_var = StringVar(value="reference")
         self.reference_scan_var = StringVar()
         self.reference_phase_var = StringVar()
         self.reference_scan_0_var = StringVar()
@@ -436,7 +438,12 @@ class DecoderGui:
         self.max_points_var = StringVar(value="300000")
         self.detrend_var = IntVar(value=0)
         self.correction_var = IntVar(value=1)
+        self.reference_store = ReferenceStore()
+        self.reference_input_0_var = StringVar()
+        self.reference_input_180_var = StringVar()
+        self.reference_status_var = StringVar()
         self.messages: queue.Queue[str] = queue.Queue()
+        self._refresh_reference_status()
         self._build()
         self.root.after(100, self._poll_messages)
 
@@ -480,49 +487,40 @@ class DecoderGui:
         )
         self._folder_row(folders, "출력 폴더", self.output_var, self._choose_output)
 
+        reference_admin = LabelFrame(outer, text="관리자 모드 · 기준면(reference)", padx=8, pady=6)
+        reference_admin.pack(fill="x", pady=(0, 8))
+        Label(
+            reference_admin,
+            textvariable=self.reference_status_var,
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", pady=(0, 4))
+        self._folder_row(
+            reference_admin,
+            "기준면 0° 폴더",
+            self.reference_input_0_var,
+            self._choose_reference_input_0,
+        )
+        self._folder_row(
+            reference_admin,
+            "기준면 180° 폴더",
+            self.reference_input_180_var,
+            self._choose_reference_input_180,
+        )
+        self.reference_button = Button(
+            reference_admin,
+            text="기준면 검증 및 영구 저장",
+            command=self._register_reference,
+        )
+        self.reference_button.pack(fill="x", pady=(4, 0))
+
         height = LabelFrame(outer, text="3D / 높이", padx=8, pady=6)
         height.pack(fill="x", pady=(0, 8))
         self._option_row(
             height,
             "높이 모드",
             self.height_mode_var,
-            ("relative", "reference", "phase_linear", "triangulation", "inverse-linear"),
-        )
-        self._folder_row(
-            height,
-            "기준 스캔",
-            self.reference_scan_var,
-            self._choose_reference_scan,
-        )
-        self._file_row(
-            height,
-            "기준 위상",
-            self.reference_phase_var,
-            self._choose_reference_phase,
-        )
-        self._folder_row(
-            height,
-            "0도 기준 스캔",
-            self.reference_scan_0_var,
-            self._choose_reference_scan_0,
-        )
-        self._folder_row(
-            height,
-            "180도 기준 스캔",
-            self.reference_scan_180_var,
-            self._choose_reference_scan_180,
-        )
-        self._file_row(
-            height,
-            "0도 기준 위상",
-            self.reference_phase_0_var,
-            self._choose_reference_phase_0,
-        )
-        self._file_row(
-            height,
-            "180도 기준 위상",
-            self.reference_phase_180_var,
-            self._choose_reference_phase_180,
+            ("reference", "phase_linear", "triangulation", "inverse-linear"),
         )
         self._file_row(
             height,
@@ -720,6 +718,90 @@ class DecoderGui:
             padx=(8, 0),
         )
 
+    def _refresh_reference_status(self) -> None:
+        metadata = self.reference_store.metadata()
+        if metadata is None:
+            self.reference_status_var.set(
+                "저장된 기준면이 없습니다. 빈 스테이지를 0°/180° 각각 촬영한 뒤 등록하세요."
+            )
+            return
+        created = str(metadata.get("created_at", "unknown"))
+        self.reference_status_var.set(
+            f"저장된 기준면 사용 중 · 등록 시각: {created}\n"
+            f"저장 위치: {self.reference_store.root}"
+        )
+
+    def _choose_reference_input_0(self) -> None:
+        folder = filedialog.askdirectory(title="빈 스테이지 기준면 0° 스캔 폴더 선택")
+        if folder:
+            self.reference_input_0_var.set(folder)
+
+    def _choose_reference_input_180(self) -> None:
+        folder = filedialog.askdirectory(title="빈 스테이지 기준면 180° 스캔 폴더 선택")
+        if folder:
+            self.reference_input_180_var.set(folder)
+
+    def _register_reference(self) -> None:
+        try:
+            source_0 = Path(self.reference_input_0_var.get().strip())
+            source_180 = Path(self.reference_input_180_var.get().strip())
+            if not self.reference_input_0_var.get().strip() or not self.reference_input_180_var.get().strip():
+                raise ValueError("기준면 0°와 180° 스캔 폴더를 모두 선택하세요.")
+            config = self._config_from_fields(use_saved_reference=False)
+        except Exception as exc:
+            messagebox.showerror("기준면 등록 오류", _format_exception_for_user(exc))
+            return
+        self.reference_button.config(state="disabled")
+        threading.Thread(
+            target=self._reference_worker,
+            args=(source_0, source_180, config),
+            daemon=True,
+        ).start()
+
+    def _reference_worker(self, source_0: Path, source_180: Path, config: DecodeConfig) -> None:
+        try:
+            self.messages.put("기준면 0°/180°를 디코딩하고 평탄도를 검증합니다.\n")
+            reference_config = replace(
+                config,
+                height_mode="relative",
+                reference_phase=None,
+                reference_scan=None,
+                reference_phase_0=None,
+                reference_phase_180=None,
+                reference_scan_0=None,
+                reference_scan_180=None,
+                analysis_roi_mode="none",
+                output_profile="compact",
+            )
+            decoder = PcbFppDecoder(reference_config)
+            folder_0 = resolve_decode_input_dir(source_0, preferred_angle=0)
+            folder_180 = resolve_decode_input_dir(source_180, preferred_angle=180)
+            result_0 = decoder._decode_in_memory(folder_0, view_angle=0)
+            result_180 = decoder._decode_in_memory(folder_180, view_angle=180)
+            report_0 = validate_flat_stage(result_0.absolute.absolute_phase, result_0.absolute.combined_mask)
+            report_180 = validate_flat_stage(result_180.absolute.absolute_phase, result_180.absolute.combined_mask)
+            if not report_0.valid or not report_180.valid:
+                raise ValueError(
+                    "기준면 검증 실패: "
+                    f"0°={report_0.reason} (유효 {report_0.valid_ratio:.1%}, P95 {report_0.p95_plane_residual:.3f}); "
+                    f"180°={report_180.reason} (유효 {report_180.valid_ratio:.1%}, P95 {report_180.p95_plane_residual:.3f})"
+                )
+            self.reference_store.save(
+                result_0.absolute.absolute_phase,
+                result_180.absolute.absolute_phase,
+                report_0,
+                report_180,
+                folder_0,
+                folder_180,
+            )
+            self.messages.put(
+                "기준면 검증 통과 및 영구 저장 완료. 이후 일반 스캔에 자동 적용됩니다.\n"
+            )
+        except Exception as exc:
+            self.messages.put(f"기준면 등록 실패. 기존에 저장된 기준면은 유지됩니다.\n{_format_exception_for_user(exc)}\n")
+        finally:
+            self.messages.put(_REFERENCE_DONE_TOKEN)
+
     def _choose_input(self) -> None:
         folder = filedialog.askdirectory(title="스캔 폴더 선택")
         if folder:
@@ -829,14 +911,21 @@ class DecoderGui:
         )
         thread.start()
 
-    def _config_from_fields(self) -> DecodeConfig:
+    def _config_from_fields(self, *, use_saved_reference: bool = True) -> DecodeConfig:
         height_mode = self.height_mode_var.get()
-        reference_scan = self._optional_path(self.reference_scan_var)
-        reference_phase = self._optional_path(self.reference_phase_var)
-        reference_scan_0 = self._optional_path(self.reference_scan_0_var)
-        reference_scan_180 = self._optional_path(self.reference_scan_180_var)
-        reference_phase_0 = self._optional_path(self.reference_phase_0_var)
-        reference_phase_180 = self._optional_path(self.reference_phase_180_var)
+        reference_scan = None
+        reference_phase = None
+        reference_scan_0 = None
+        reference_scan_180 = None
+        reference_phase_0 = None
+        reference_phase_180 = None
+        if use_saved_reference:
+            if not self.reference_store.is_available():
+                raise ValueError(
+                    "저장된 기준면(reference)이 없습니다. 관리자 모드에서 빈 스테이지 0°/180° 기준면을 등록하세요."
+                )
+            reference_phase_0 = self.reference_store.phase_0_path
+            reference_phase_180 = self.reference_store.phase_180_path
         calibration_config = self._optional_path(self.calibration_config_var)
         fusion_transform = self._optional_path(self.fusion_transform_var)
         fusion_center = self._parse_fusion_center()
@@ -858,16 +947,8 @@ class DecoderGui:
             self.analysis_stage_diameter_var.get(),
         )
 
-        if (
-            height_mode != "relative"
-            and reference_scan is None
-            and reference_phase is None
-            and reference_scan_0 is None
-            and reference_phase_0 is None
-        ):
-            raise ValueError(
-                "상대 높이가 아닌 모드에서는 기준 스캔 폴더 또는 기준 위상 파일이 필요합니다."
-            )
+        if not use_saved_reference:
+            height_mode = "relative"
         if height_mode in ("phase_linear", "triangulation", "inverse-linear") and calibration_config is None:
             raise ValueError(
                 "삼각측량 또는 역선형 높이 모드에서는 보정 설정 파일이 필요합니다."
@@ -1058,6 +1139,10 @@ class DecoderGui:
                 break
             if msg == _DONE_TOKEN:
                 self.run_button.config(state="normal")
+                continue
+            if msg == _REFERENCE_DONE_TOKEN:
+                self.reference_button.config(state="normal")
+                self._refresh_reference_status()
                 continue
             self.log.insert(END, msg)
             self.log.see(END)
