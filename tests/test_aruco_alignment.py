@@ -81,7 +81,7 @@ def test_stage_precalibration_from_two_standalone_images(tmp_path):
     if not hasattr(cv2, "aruco"):
         pytest.skip("OpenCV ArUco module is not available")
 
-    target = np.asarray(_target_with_four_markers())
+    target = np.asarray(_target_with_four_markers()).copy()
     target_path = tmp_path / "prescan_0.png"
     source_path = tmp_path / "prescan_250.png"
     Image.fromarray(target).save(target_path)
@@ -126,6 +126,33 @@ def test_stage_precalibration_from_two_standalone_images(tmp_path):
         [338.0, 362.0],
         abs=1.0,
     )
+
+
+def test_estimate_aruco_transform_accepts_one_visible_opposite_pair(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    if not hasattr(cv2, "aruco"):
+        pytest.skip("OpenCV ArUco module is not available")
+
+    target = np.asarray(_target_with_four_markers()).copy()
+    source_matrix = cv2.getRotationMatrix2D((350.0, 350.0), 179.0, 1.0)
+    source = cv2.warpAffine(target, source_matrix, (700, 700), flags=cv2.INTER_NEAREST, borderValue=255)
+    # Keep only the top/bottom pair: configured order 0,1,2,3 -> opposite 0,2.
+    target[:, :250] = 255
+    target[:, 450:] = 255
+    source[:, :250] = 255
+    source[:, 450:] = 255
+    input_dir = tmp_path / "deg_0"
+    input_180_dir = tmp_path / "deg_180"
+    input_dir.mkdir()
+    input_180_dir.mkdir()
+    Image.fromarray(target).save(input_dir / "pattern_000.png")
+    Image.fromarray(source).save(input_180_dir / "pattern_000.png")
+
+    result = estimate_aruco_transform(input_dir, input_180_dir, marker_ids=[0, 1, 2, 3])
+
+    assert result.marker_ids == [0, 2]
+    assert result.point_count == 8
+    assert result.reprojection_rmse_px < 0.8
 
 
 def test_auto_fusion_registration_saves_aruco_transform(tmp_path):

@@ -157,13 +157,11 @@ def estimate_aruco_transform_from_images(
 
     target_by_id = {marker.marker_id: marker for marker in target_markers}
     source_by_id = {marker.marker_id: marker for marker in source_markers}
-    missing_target = [marker_id for marker_id in marker_ids if marker_id not in target_by_id]
-    missing_source = [marker_id for marker_id in marker_ids if marker_id not in source_by_id]
-    if missing_target or missing_source:
-        raise ValueError(
-            "Requested ArUco markers were not detected. "
-            f"missing in 0-degree={missing_target}, missing in rotated={missing_source}"
-        )
+    marker_ids = _select_marker_ids_for_alignment(
+        marker_ids,
+        target_by_id,
+        source_by_id,
+    )
 
     source_points: list[list[float]] = []
     target_points: list[list[float]] = []
@@ -385,6 +383,47 @@ def _normalize_inlier_mask(inliers: np.ndarray | None, *, point_count: int) -> n
     if mask.shape[0] != point_count:
         return np.ones(point_count, dtype=bool)
     return mask
+
+
+def _select_marker_ids_for_alignment(
+    requested_ids: list[int],
+    target_by_id: dict[int, DetectedMarker],
+    source_by_id: dict[int, DetectedMarker],
+) -> list[int]:
+    """Use all visible markers, or one opposite pair when the camera crops two.
+
+    The requested four IDs are ordered around the stage.  Thus [0, 1, 2, 3]
+    represents opposite pairs (0, 2) and (1, 3); a [1, 2, 3, 4] layout uses
+    (1, 3) and (2, 4).  Both views must expose the same selected pair.
+    """
+    common = {
+        marker_id
+        for marker_id in requested_ids
+        if marker_id in target_by_id and marker_id in source_by_id
+    }
+    if all(marker_id in common for marker_id in requested_ids):
+        return requested_ids
+
+    if len(requested_ids) == 4:
+        candidates = ([requested_ids[0], requested_ids[2]], [requested_ids[1], requested_ids[3]])
+    else:
+        candidates = [requested_ids[index : index + 2] for index in range(len(requested_ids) - 1)]
+    for candidate in candidates:
+        if all(marker_id in common for marker_id in candidate):
+            return candidate
+
+    missing_target = [marker_id for marker_id in requested_ids if marker_id not in target_by_id]
+    missing_source = [marker_id for marker_id in requested_ids if marker_id not in source_by_id]
+    pairs = (
+        f"{requested_ids[0]},{requested_ids[2]} or {requested_ids[1]},{requested_ids[3]}"
+        if len(requested_ids) == 4
+        else "at least one common marker pair"
+    )
+    raise ValueError(
+        "ArUco alignment requires all requested markers or the same opposite pair in both views. "
+        f"Expected {pairs}; missing in 0-degree={missing_target}, "
+        f"missing in rotated={missing_source}"
+    )
 
 
 def _similarity_rotation_summary(
