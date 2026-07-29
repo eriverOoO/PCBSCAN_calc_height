@@ -180,6 +180,31 @@ def test_synthetic_scan_end_to_end(tmp_path):
     assert int(result.gray.stripe_order_k.max()) == 15
 
 
+def test_decode_preserves_capture_sidecars_for_portable_analysis(tmp_path):
+    input_dir = tmp_path / "captures" / "scan_portable" / "angle_000"
+    output_dir = tmp_path / "processed" / "scan_portable"
+    _write_synthetic_scan(input_dir, inverted_gray=True)
+    (input_dir / "scan_log.json").write_text('{"scan_id": "portable"}', encoding="utf-8")
+    (input_dir / "quality_report.json").write_text('{"passed": true}', encoding="utf-8")
+    (input_dir / "hdr_merge_report.json").write_text('{"mode": "hdr"}', encoding="utf-8")
+    (input_dir.parent / "stage_precalibration.json").write_text('{"kind": "homography"}', encoding="utf-8")
+
+    result = PcbFppDecoder(DecodeConfig(median_filter=0)).decode(input_dir, output_dir)
+
+    logs = output_dir / "capture_logs"
+    assert (logs / "scan_log.json").read_text(encoding="utf-8") == '{"scan_id": "portable"}'
+    assert (logs / "quality_report.json").exists()
+    assert (logs / "hdr_merge_report.json").exists()
+    assert (logs / "stage_precalibration.json").exists()
+    manifest = json.loads((logs / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["views"]["input"]["copied_files"] == [
+        "scan_log.json",
+        "quality_report.json",
+        "hdr_merge_report.json",
+    ]
+    assert result.report["capture_artifacts"]["directory"] == "capture_logs"
+
+
 def test_aruco_analysis_roi_limits_height_to_centered_pcb_size(tmp_path):
     cv2 = pytest.importorskip("cv2")
     if not hasattr(cv2, "aruco"):
@@ -641,3 +666,24 @@ def test_fused_0_180_scan_fills_shadow_region(tmp_path):
     assert result.report["fusion"]["coverage"]["fused_valid_ratio"] > (
         result.deg0.report["mask_coverage"]["combined_mask_ratio"]
     )
+
+
+def test_fused_decode_preserves_sidecars_per_view(tmp_path):
+    input_0 = tmp_path / "captures" / "scan_portable_fused" / "angle_000"
+    input_180 = tmp_path / "captures" / "scan_portable_fused" / "angle_180"
+    output_dir = tmp_path / "processed" / "scan_portable_fused"
+    _write_synthetic_scan(input_0, inverted_gray=True)
+    _copy_rotated_scan(input_0, input_180)
+    (input_0 / "quality_report.json").write_text('{"angle": 0}', encoding="utf-8")
+    (input_180 / "quality_report.json").write_text('{"angle": 180}', encoding="utf-8")
+
+    result = PcbFppDecoder(DecodeConfig(median_filter=0)).decode_fused(
+        input_0, input_180, output_dir
+    )
+
+    logs = output_dir / "capture_logs"
+    assert (logs / "deg_0" / "quality_report.json").read_text(encoding="utf-8") == '{"angle": 0}'
+    assert (logs / "deg_180" / "quality_report.json").read_text(encoding="utf-8") == '{"angle": 180}'
+    manifest = json.loads((logs / "manifest.json").read_text(encoding="utf-8"))
+    assert set(manifest["views"]) == {"deg_0", "deg_180"}
+    assert result.report["capture_artifacts"]["manifest"] == "capture_logs/manifest.json"

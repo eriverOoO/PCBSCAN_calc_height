@@ -18,6 +18,7 @@ from .calibration import (
     structured_light_calibration_report,
     triangulation_height,
 )
+from .capture_artifacts import preserve_capture_artifacts
 from .diagnostics import write_capture_diagnosis, write_fusion_diagnosis
 from .graycode import decode_gray_bits
 from .io import PatternSet, load_pattern_set, resolve_decode_input_dir, save_float01_png
@@ -708,12 +709,18 @@ class PcbFppDecoder:
         deg0 = self._decode_in_memory(input_dir_0, view_angle=0)
         deg180 = self._decode_in_memory(input_dir_180, view_angle=180)
         fusion = self.fuse_decode_results(deg0, deg180)
-        self.save_outputs(deg0, output_dir / "views" / "deg_0")
-        self.save_outputs(deg180, output_dir / "views" / "deg_180")
+        self.save_outputs(deg0, output_dir / "views" / "deg_0", preserve_capture_logs=False)
+        self.save_outputs(deg180, output_dir / "views" / "deg_180", preserve_capture_logs=False)
         self.save_fusion_outputs(fusion, output_dir)
         return fusion
 
-    def save_outputs(self, result: DecodeResult, output_dir: Path) -> None:
+    def save_outputs(
+        self,
+        result: DecodeResult,
+        output_dir: Path,
+        *,
+        preserve_capture_logs: bool = True,
+    ) -> None:
         output_dir = Path(output_dir).expanduser().resolve()
         full_outputs = self.config.output_profile == "full"
         if not full_outputs:
@@ -871,6 +878,10 @@ class PcbFppDecoder:
                 "max_point_cloud_points": self.config.max_point_cloud_points,
             }
         result.report["output"] = {"profile": self.config.output_profile}
+        if preserve_capture_logs:
+            result.report["capture_artifacts"] = preserve_capture_artifacts(
+                {None: result.patterns.input_dir}, output_dir
+            )
 
         write_capture_diagnosis(result, output_dir)
 
@@ -992,6 +1003,13 @@ class PcbFppDecoder:
                 "max_point_cloud_points": self.config.max_point_cloud_points,
             }
         fusion.report["output"] = {"profile": self.config.output_profile}
+        fusion.report["capture_artifacts"] = preserve_capture_artifacts(
+            {
+                "deg_0": fusion.deg0.patterns.input_dir,
+                "deg_180": fusion.deg180.patterns.input_dir,
+            },
+            output_dir,
+        )
 
         write_fusion_diagnosis(fusion, output_dir)
 
