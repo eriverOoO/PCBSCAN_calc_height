@@ -9,6 +9,7 @@ from pcb_fpp_decoder.aruco_marker import generate_marker_image
 from pcb_fpp_decoder.cli import build_parser, config_from_args, main as cli_main
 from pcb_fpp_decoder.decoder import DecodeConfig, PcbFppDecoder
 from pcb_fpp_decoder.io import has_decode_pattern_files, load_pattern_set, rgb_to_intensity
+from pcb_fpp_decoder.stage_precalibration import load_stage_precalibration
 
 
 def _save(path: Path, array: np.ndarray) -> None:
@@ -424,6 +425,32 @@ def test_cli_auto_uses_latest_stage_precalibration_without_pattern_aruco(tmp_pat
     assert report["views"]["deg_0"]["analysis_roi"]["mode"] == "none"
     assert "only [1, 3]" in report["views"]["deg_0"]["analysis_roi"]["reason"]
     assert report["fusion"]["coverage"]["fused_valid_ratio"] > 0.95
+
+
+def test_stage_precalibration_reads_current_controller_nested_metrics(tmp_path):
+    path = tmp_path / "stage_precalibration.json"
+    path.write_text(
+        json.dumps(
+            {
+                "matrix": [[-1, 0, 79], [0, -1, 47], [0, 0, 1]],
+                "transform_kind": "homography",
+                "aruco": {
+                    "marker_ids": [1, 3],
+                    "reprojection_rmse_px": 1.79,
+                },
+                "stage_precalibration": {
+                    "actual_rotation_magnitude_deg": 179.965,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    precomputed = load_stage_precalibration(path)
+
+    assert precomputed.marker_ids == (1, 3)
+    assert precomputed.rmse_px == pytest.approx(1.79)
+    assert precomputed.actual_rotation_magnitude_deg == pytest.approx(179.965)
 
 
 def test_explicit_fusion_transform_remains_higher_priority_than_auto_registration(tmp_path, monkeypatch):

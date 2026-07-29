@@ -83,8 +83,9 @@ def load_stage_precalibration(path: Path, *, scan_root: Path | None = None) -> S
             f"{direction}"
         )
 
-    aruco = data.get("aruco")
-    marker_values = aruco.get("marker_ids", ()) if isinstance(aruco, dict) else ()
+    aruco = _mapping_value(data, "aruco")
+    stage_details = _mapping_value(data, "stage_precalibration")
+    marker_values = aruco.get("marker_ids", ())
     try:
         marker_ids = tuple(int(value) for value in marker_values)
     except (TypeError, ValueError) as exc:
@@ -96,9 +97,17 @@ def load_stage_precalibration(path: Path, *, scan_root: Path | None = None) -> S
         matrix=matrix,
         transform_kind=kind,
         marker_ids=marker_ids,
-        rmse_px=_optional_number(data, "rmse_px", "reprojection_rmse_px", "rmse"),
-        actual_rotation_magnitude_deg=_optional_number(
-            data, "actual_rotation_magnitude_deg", "rotation_magnitude_deg"
+        # Older capture programs wrote these fields at the top level.  The
+        # current controller writes fit metrics under ``aruco`` and stage
+        # rotation metadata under ``stage_precalibration``.  Read both forms
+        # so a valid two-marker pre-calibration is reported accurately.
+        rmse_px=_first_optional_number(
+            (data, aruco), "rmse_px", "reprojection_rmse_px", "rmse"
+        ),
+        actual_rotation_magnitude_deg=_first_optional_number(
+            (data, stage_details),
+            "actual_rotation_magnitude_deg",
+            "rotation_magnitude_deg",
         ),
         metadata=data,
     )
@@ -130,6 +139,21 @@ def _optional_number(data: dict[str, Any], *keys: str) -> float | None:
             except (TypeError, ValueError):
                 return None
     return None
+
+
+def _first_optional_number(
+    mappings: tuple[dict[str, Any], ...], *keys: str
+) -> float | None:
+    for mapping in mappings:
+        value = _optional_number(mapping, *keys)
+        if value is not None:
+            return value
+    return None
+
+
+def _mapping_value(data: dict[str, Any], key: str) -> dict[str, Any]:
+    value = data.get(key)
+    return value if isinstance(value, dict) else {}
 
 
 def _direction_from_metadata(data: dict[str, Any]) -> str | None:

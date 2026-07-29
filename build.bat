@@ -10,7 +10,7 @@ set "GUI_NAME=PCB_FPP_Decoder"
 set "CLI_NAME=PCB_FPP_Decoder_CLI"
 set "DEBUG_NAME=PCB_FPP_Debugger"
 set "BUILD_DIR=%TEMP%\PCB_FPP_Decoder_pyinstaller_%RANDOM%"
-set "DIST_DIR=dist"
+if not defined DIST_DIR set "DIST_DIR=dist"
 set "BUNDLED_PY=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
 
 echo.
