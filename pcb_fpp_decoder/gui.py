@@ -963,7 +963,7 @@ class DecoderGui:
         )
 
         if (
-            height_mode != "relative"
+            False  # The decoder falls back to ./reference_surface when available.
             and reference_scan is None
             and reference_phase is None
             and reference_scan_0 is None

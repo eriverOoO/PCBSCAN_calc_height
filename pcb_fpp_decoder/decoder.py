@@ -28,6 +28,7 @@ from .phase import (
     diagnose_phase_conventions,
     wrapped_to_0_2pi,
 )
+from .reference_surface import reference_phase_path
 from .visualization import (
     finite_percentiles,
     normalize_for_preview,
@@ -95,6 +96,9 @@ class DecodeConfig:
     reference_phase_180: Path | None = None
     reference_scan_0: Path | None = None
     reference_scan_180: Path | None = None
+    reference_surface_store: Path = field(
+        default_factory=lambda: Path.cwd() / "reference_surface"
+    )
     calibration_config: Path | None = None
     height_sign: float = 1.0
     fusion_mode: str = "modulation-weighted"
@@ -1281,6 +1285,12 @@ class PcbFppDecoder:
             ref_phase = self.compute_wrapped_phase(ref_patterns, ref_correction)
             ref_absolute = self.unwrap_absolute_phase(ref_gray, ref_phase)
             return ref_absolute.absolute_phase.astype(np.float32)
+
+        # A reference is captured and accepted explicitly, then reused until
+        # the operator deliberately validates a replacement scan.
+        cached_phase = reference_phase_path(self.config.reference_surface_store, view_angle)
+        if cached_phase.exists():
+            return np.load(cached_phase).astype(np.float32)
 
         return None
 

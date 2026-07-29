@@ -20,6 +20,7 @@ from .stage_precalibration import (
     find_stage_precalibration,
     validate_phone_fusion_patterns,
 )
+from .reference_surface import store_validated_reference_surface, validate_reference_surface
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -155,6 +156,26 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="180-degree precomputed reference phase; overrides --reference-phase",
     )
+    parser.add_argument(
+        "--reference-surface-store",
+        type=Path,
+        default=Path.cwd() / "reference_surface",
+        help="Folder for validated reusable zero-plane phase data (default: ./reference_surface)",
+    )
+    parser.add_argument(
+        "--validate-reference-scan",
+        action="store_true",
+        help="Validate this empty-stage scan and replace the cached reference only if it passes",
+    )
+    parser.add_argument(
+        "--reference-view-angle",
+        type=int,
+        default=0,
+        help="View angle used when saving a validated reference (default: 0)",
+    )
+    parser.add_argument("--reference-min-valid-ratio", type=float, default=0.80)
+    parser.add_argument("--reference-max-rms-phase", type=float, default=0.25)
+    parser.add_argument("--reference-max-pv-phase", type=float, default=1.00)
     parser.add_argument(
         "--calibration-config",
         type=Path,
@@ -368,6 +389,7 @@ def config_from_args(args: argparse.Namespace) -> DecodeConfig:
         reference_scan_180=args.reference_scan_180,
         reference_phase_0=args.reference_phase_0,
         reference_phase_180=args.reference_phase_180,
+        reference_surface_store=args.reference_surface_store,
         calibration_config=args.calibration_config,
         height_sign=args.height_sign,
         fusion_mode=args.fusion_mode,
@@ -417,6 +439,9 @@ def main(argv: list[str] | None = None) -> int:
             )
         args.input_180 = candidate
 
+    if args.validate_reference_scan and args.input_180:
+        parser.error("--validate-reference-scan accepts one view at a time; do not use --input-180")
+
     try:
         stage_precalibration = _prepare_stage_precalibration(args)
     except (ValueError, FileNotFoundError) as exc:
@@ -434,6 +459,9 @@ def main(argv: list[str] | None = None) -> int:
             )
 
     config = config_from_args(args)
+    if args.validate_reference_scan:
+        # Validation must evaluate the new scan itself, never subtract an old cache.
+        config.height_mode = "relative"
     try:
         estimated_transform = _prepare_fusion_registration(args, config) if args.input_180 else None
         decoder = PcbFppDecoder(config)
@@ -443,6 +471,31 @@ def main(argv: list[str] | None = None) -> int:
             result = decoder.decode(args.input, args.output)
     except (RuntimeError, ValueError, FileNotFoundError) as exc:
         parser.error(str(exc))
+
+    if args.validate_reference_scan:
+        validation = validate_reference_surface(
+            result.absolute.absolute_phase,
+            result.absolute.combined_mask,
+            min_valid_ratio=args.reference_min_valid_ratio,
+            max_residual_rms_phase=args.reference_max_rms_phase,
+            max_residual_peak_to_valley_phase=args.reference_max_pv_phase,
+        )
+        if not validation.valid:
+            parser.error(
+                "reference surface validation failed; cache was not changed: "
+                f"valid_ratio={validation.valid_ratio:.3f}, "
+                f"rms={validation.residual_rms_phase:.4f} phase, "
+                f"peak_to_valley={validation.residual_peak_to_valley_phase:.4f} phase"
+            )
+        cached = store_validated_reference_surface(
+            args.reference_surface_store,
+            result.absolute.absolute_phase,
+            result.absolute.combined_mask,
+            validation,
+            view_angle=args.reference_view_angle,
+            source_scan=args.input,
+        )
+        print(f"Reference surface validated and saved: {cached}")
 
     if args.input_180:
         print(f"Decoded 0-degree scan: {args.input}")
