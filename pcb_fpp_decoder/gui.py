@@ -30,7 +30,12 @@ from tkinter import (
 
 from .decoder import DecodeConfig, PcbFppDecoder
 from .fusion_registration import estimate_and_save_fusion_transform
-from .io import COLOR_INPUT_MODES, parse_crosstalk_matrix, resolve_decode_input_dir
+from .io import (
+    COLOR_INPUT_MODES,
+    parse_crosstalk_matrix,
+    resolve_decode_input_dir,
+    resolve_fusion_scan_dirs,
+)
 from .reference_store import ReferenceStore, validate_flat_stage
 
 
@@ -392,16 +397,19 @@ class DecoderGui:
         self.input_var = StringVar()
         self.input_180_var = StringVar()
         self.output_var = StringVar()
-        self.min_signal_var = StringVar(value="20")
+        # Ximea Mono8 captures retain reliable flat-stage geometry at this
+        # conservative low-contrast profile.  The previous 20/0.05/0.05
+        # defaults discarded too much of the rotated (180-degree) view.
+        self.min_signal_var = StringVar(value="12")
         self.saturation_var = StringVar(value="250")
         self.dark_var = StringVar(value="5")
-        self.modulation_var = StringVar(value="0.05")
+        self.modulation_var = StringVar(value="0.04")
         self.input_color_mode_var = StringVar(value="smartphone_uv_blue")
         self.crosstalk_matrix_var = StringVar()
         self.median_filter_var = StringVar(value="3")
         self.gray_decode_var = StringVar(value="auto")
         self.gray_threshold_var = StringVar(value="dynamic_raw")
-        self.gray_pair_contrast_var = StringVar(value="0.05")
+        self.gray_pair_contrast_var = StringVar(value="0.04")
         self.phase_convention_var = StringVar(value="default")
         self.phase_direction_var = StringVar(value="normal")
         self.height_mode_var = StringVar(value="reference")
@@ -653,7 +661,7 @@ class DecoderGui:
         Windows supplies ``delta`` in multiples of 120, while X11 uses button
         4/5 events.  Supporting both keeps the standalone app portable.
         """
-        widget = self.root.winfo_containing(event.x_root, event.y_root)
+        widget = event.widget
         while widget is not None:
             if widget is self.content_canvas:
                 if getattr(event, "num", None) == 4:
@@ -665,7 +673,7 @@ class DecoderGui:
                     amount = -steps if event.delta > 0 else steps
                 self.content_canvas.yview_scroll(amount, "units")
                 return "break"
-            widget = widget.master
+            widget = getattr(widget, "master", None)
         return None
 
     def _folder_row(self, parent: Frame, label: str, var: StringVar, command) -> None:
@@ -805,10 +813,23 @@ class DecoderGui:
     def _choose_input(self) -> None:
         folder = filedialog.askdirectory(title="스캔 폴더 선택")
         if folder:
-            self.input_var.set(folder)
+            selected = Path(folder)
+            input_0, input_180 = resolve_fusion_scan_dirs(selected)
+            self.input_var.set(str(input_0))
+            self.input_180_var.set(str(input_180) if input_180 is not None else "")
+            scan_root = input_0.parent if input_0.name.lower().startswith(("angle_", "deg_")) else input_0
+            stage_precalibration = scan_root / "stage_precalibration.json"
+            if stage_precalibration.is_file():
+                self.fusion_transform_var.set(str(stage_precalibration))
+                self.registration_transform_var.set(1)
+                self.registration_rotation_var.set(0)
+                self.registration_aruco_var.set(0)
+                self.registration_phase_var.set(0)
+                # The ArUco images used for this transform are separate
+                # pre-scan frames, not necessarily visible in pattern_000.
+                self.analysis_roi_var.set("none")
             if not self.output_var.get():
-                input_path = Path(folder)
-                self.output_var.set(str(Path.cwd() / "processed" / input_path.parent.name / input_path.name))
+                self.output_var.set(str(Path.cwd() / "processed" / scan_root.name))
 
     def _choose_input_180(self) -> None:
         folder = filedialog.askdirectory(title="180도 스캔 폴더 선택")
@@ -894,11 +915,23 @@ class DecoderGui:
             if not output_text:
                 raise ValueError("출력 폴더를 선택해 주세요.")
 
-            input_dir = Path(input_text)
-            input_180_dir = self._optional_path(self.input_180_var)
+            input_dir, auto_input_180_dir = resolve_fusion_scan_dirs(Path(input_text))
+            selected_input_180 = self._optional_path(self.input_180_var)
+            input_180_dir = (
+                resolve_decode_input_dir(selected_input_180, preferred_angle=180)
+                if selected_input_180 is not None
+                else auto_input_180_dir
+            )
             output_dir = Path(output_text)
             config = self._config_from_fields()
             registration = self._registration_from_fields()
+            stage_precalibration = input_dir.parent / "stage_precalibration.json"
+            if input_180_dir is not None and stage_precalibration.is_file():
+                if config.fusion_transform is None:
+                    config.fusion_transform = stage_precalibration
+                    registration = replace(registration, mode="rotation-180")
+                if config.fusion_transform == stage_precalibration:
+                    config.analysis_roi_mode = "none"
         except Exception as exc:
             messagebox.showerror("설정 오류", _format_exception_for_user(exc))
             return

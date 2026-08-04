@@ -399,6 +399,21 @@ def resolve_decode_input_dir(input_dir: Path, preferred_angle: int | None = None
     return root
 
 
+def resolve_fusion_scan_dirs(scan_folder: Path) -> tuple[Path, Path | None]:
+    """Resolve a scan root (or either angle folder) into its 0/180° pair."""
+    selected = Path(scan_folder).expanduser().resolve()
+    is_angle_folder = re.fullmatch(r"(?:angle|deg)_\d{1,3}", selected.name, re.IGNORECASE)
+    scan_root = selected.parent if is_angle_folder and has_decode_pattern_files(selected) else selected
+
+    input_0 = resolve_decode_input_dir(scan_root, preferred_angle=0)
+    input_180 = resolve_decode_input_dir(scan_root, preferred_angle=180)
+    if not has_decode_pattern_files(input_0):
+        input_0 = selected
+    if input_180 == input_0 or not has_decode_pattern_files(input_180):
+        input_180 = None
+    return input_0, input_180
+
+
 def _angle_folder_candidates(root: Path, angle: int) -> list[Path]:
     return [
         root / f"angle_{angle:03d}",

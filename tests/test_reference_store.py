@@ -12,6 +12,13 @@ def test_flat_stage_validation_accepts_linear_phase_plane() -> None:
     assert report.valid
 
 
+def test_flat_stage_validation_accepts_projective_phase_of_a_flat_stage() -> None:
+    y, x = np.indices((120, 160))
+    phase = (2.8 * x - 0.35 * y + 40.0) / (1.0 + 0.0008 * x - 0.0005 * y)
+    report = validate_flat_stage(phase, np.ones_like(phase, dtype=bool))
+    assert report.valid
+
+
 def test_flat_stage_validation_rejects_object_on_stage() -> None:
     y, x = np.indices((100, 120))
     phase = 2.0 * x + 0.1 * y

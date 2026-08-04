@@ -8,7 +8,12 @@ from PIL import Image
 from pcb_fpp_decoder.aruco_marker import generate_marker_image
 from pcb_fpp_decoder.cli import build_parser, config_from_args, main as cli_main
 from pcb_fpp_decoder.decoder import DecodeConfig, PcbFppDecoder
-from pcb_fpp_decoder.io import has_decode_pattern_files, load_pattern_set, rgb_to_intensity
+from pcb_fpp_decoder.io import (
+    has_decode_pattern_files,
+    load_pattern_set,
+    resolve_fusion_scan_dirs,
+    rgb_to_intensity,
+)
 
 
 def _save(path: Path, array: np.ndarray) -> None:
@@ -344,6 +349,19 @@ def test_cli_resolves_pro4500_phone_scan_root_angle_folder(tmp_path):
     assert (output_dir / "height" / "height_relative.npy").exists()
     assert not (output_dir / "corrected").exists()
     assert not (output_dir / "point_cloud" / "point_cloud.ply").exists()
+
+
+def test_resolve_fusion_scan_dirs_finds_both_angles_from_scan_root(tmp_path):
+    scan_root = tmp_path / "captures" / "scan_phone"
+    angle_0 = scan_root / "angle_000"
+    angle_180 = scan_root / "angle_180"
+    _write_synthetic_scan(angle_0)
+    _write_synthetic_scan(angle_180)
+
+    resolved_0, resolved_180 = resolve_fusion_scan_dirs(scan_root)
+
+    assert resolved_0 == angle_0.resolve()
+    assert resolved_180 == angle_180.resolve()
 
 
 def test_cli_full_output_profile_keeps_point_cloud_artifacts(tmp_path):
