@@ -4,6 +4,7 @@ import queue
 import re
 import threading
 import os
+import json
 from dataclasses import dataclass, replace
 from pathlib import Path
 from tkinter import (
@@ -41,6 +42,28 @@ from .reference_store import ReferenceStore, validate_flat_stage
 
 _DONE_TOKEN = "__PCB_FPP_DECODE_DONE__"
 _REFERENCE_DONE_TOKEN = "__PCB_FPP_REFERENCE_DONE__"
+
+
+def suggested_output_dir(scan_root: Path) -> Path:
+    """Keep the default processed folder tied to the selected capture ID."""
+    return Path.cwd() / "processed" / scan_root.name
+
+
+def is_default_scan_output_dir(path: Path) -> bool:
+    return path.name.lower().startswith("scan_") and path.parent.name.lower() == "processed"
+
+
+def output_matches_input_scan(output_dir: Path, input_dir: Path) -> bool:
+    """Allow reruns for the same source, but never silently replace another scan's report."""
+    report_path = output_dir / "decode_report.json"
+    if not report_path.is_file():
+        return True
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        recorded = Path(str(report.get("input_dir", ""))).resolve()
+    except (OSError, ValueError, TypeError):
+        return False
+    return recorded == input_dir.resolve()
 
 _OPTION_LABELS = {
     "relative": "상대 위상 (phase units)",
@@ -828,8 +851,9 @@ class DecoderGui:
                 # The ArUco images used for this transform are separate
                 # pre-scan frames, not necessarily visible in pattern_000.
                 self.analysis_roi_var.set("none")
-            if not self.output_var.get():
-                self.output_var.set(str(Path.cwd() / "processed" / scan_root.name))
+            output_text = self.output_var.get().strip()
+            if not output_text or is_default_scan_output_dir(Path(output_text)):
+                self.output_var.set(str(suggested_output_dir(scan_root)))
 
     def _choose_input_180(self) -> None:
         folder = filedialog.askdirectory(title="180도 스캔 폴더 선택")
@@ -923,6 +947,11 @@ class DecoderGui:
                 else auto_input_180_dir
             )
             output_dir = Path(output_text)
+            if not output_matches_input_scan(output_dir, input_dir):
+                raise ValueError(
+                    "Output folder already contains results for a different input scan. "
+                    "Choose the output folder matching the selected scan ID."
+                )
             config = self._config_from_fields()
             registration = self._registration_from_fields()
             stage_precalibration = input_dir.parent / "stage_precalibration.json"
