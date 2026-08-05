@@ -151,34 +151,67 @@ def phase_linear_height(
     delta_phi: np.ndarray,
     calibration: Calibration,
     fallback_sign: float = 1.0,
-) -> tuple[np.ndarray, dict[str, float]]:
+    view_angle: int | None = None,
+) -> tuple[np.ndarray, dict[str, Any]]:
     """Convert reference-subtracted absolute phase to millimeters."""
-    phase_per_mm = calibration.get_float(
-        "phase_linear.phase_per_mm", "phase_per_mm"
-    )
-    offset_phase = calibration.get_float(
-        "phase_linear.offset_phase", "offset_phase"
-    )
-    height_sign = calibration.get_float(
-        "phase_linear.height_sign", "height_sign"
-    )
+    suffix = f"_{int(view_angle)}" if view_angle is not None else ""
+    phase_names = (f"phase_linear.phase_per_mm{suffix}", "phase_linear.phase_per_mm", "phase_per_mm")
+    offset_names = (f"phase_linear.offset_phase{suffix}", "phase_linear.offset_phase", "offset_phase")
+    sign_names = (f"phase_linear.height_sign{suffix}", "phase_linear.height_sign", "height_sign")
+    if calibration.arrays:
+        phase_per_mm = calibration.get_value(*phase_names)
+        offset_phase = calibration.get_value(*offset_names)
+        height_sign_value = calibration.get_value(*sign_names)
+    else:
+        phase_per_mm = calibration.get_float(*phase_names)
+        offset_phase = calibration.get_float(*offset_names)
+        height_sign_value = calibration.get_float(*sign_names)
     if phase_per_mm is None or offset_phase is None:
         raise ValueError(
             "phase_linear mode requires phase_per_mm and offset_phase in calibration JSON"
         )
-    if not np.isfinite(phase_per_mm) or phase_per_mm <= 0:
-        raise ValueError("phase_per_mm must be a finite positive value")
-    if height_sign is None:
+    phase_per_mm = _as_broadcastable_parameter(
+        phase_per_mm, delta_phi.shape, "phase_per_mm"
+    )
+    offset_phase = _as_broadcastable_parameter(
+        offset_phase, delta_phi.shape, "offset_phase"
+    )
+    phase_per_array = np.asarray(phase_per_mm, dtype=np.float32)
+    if not np.any(np.isfinite(phase_per_array) & (phase_per_array > 0)):
+        raise ValueError("phase_per_mm must contain at least one finite positive value")
+
+    if height_sign_value is None:
         height_sign = float(fallback_sign)
+    else:
+        sign_array = np.asarray(height_sign_value, dtype=np.float32)
+        if sign_array.ndim != 0:
+            raise ValueError("phase_linear height_sign must be a scalar")
+        height_sign = float(sign_array)
     if not np.isfinite(height_sign) or height_sign == 0:
         raise ValueError("height_sign must be a finite non-zero value")
     signed_delta = float(height_sign) * np.asarray(delta_phi, dtype=np.float32)
-    height = (signed_delta - float(offset_phase)) / float(phase_per_mm)
+    valid_parameters = (
+        np.isfinite(phase_per_mm)
+        & (np.asarray(phase_per_mm) > 0)
+        & np.isfinite(offset_phase)
+    )
+    height = np.where(
+        valid_parameters,
+        (signed_delta - offset_phase) / phase_per_mm,
+        np.nan,
+    )
     return height.astype(np.float32), {
-        "phase_per_mm": float(phase_per_mm),
-        "offset_phase": float(offset_phase),
+        "phase_per_mm": _phase_linear_parameter_summary(phase_per_mm),
+        "offset_phase": _phase_linear_parameter_summary(offset_phase),
         "height_sign": float(height_sign),
     }
+
+
+def _phase_linear_parameter_summary(value: CalibrationValue) -> float | dict[str, Any]:
+    array = np.asarray(value)
+    if array.ndim == 0:
+        return float(array)
+    return _parameter_summary(array.astype(np.float32))
 
 
 def structured_light_calibration_report(calibration: Calibration | None) -> dict[str, Any]:
@@ -225,9 +258,10 @@ def _as_broadcastable_parameter(
     target_shape: tuple[int, ...],
     name: str,
 ) -> CalibrationValue:
-    array = np.asarray(value, dtype=np.float32)
+    array = np.asarray(value)
     if array.ndim == 0:
         return float(array)
+    array = np.asarray(array, dtype=np.float32)
     try:
         np.broadcast_shapes(array.shape, target_shape)
     except ValueError as exc:

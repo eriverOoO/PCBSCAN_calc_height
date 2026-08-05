@@ -31,6 +31,28 @@ def test_phase_linear_height_uses_nested_calibration_sign_offset_and_scale():
     }
 
 
+def test_phase_linear_height_accepts_view_specific_position_maps():
+    calibration = Calibration(
+        arrays={
+            "phase_linear_phase_per_mm_0": np.array(
+                [[10.0, np.nan], [20.0, 40.0]], dtype=np.float32
+            ),
+            "phase_linear_offset_phase_0": np.array(
+                [[0.0, np.nan], [2.0, 4.0]], dtype=np.float32
+            ),
+            "phase_linear_height_sign_0": np.array(-1.0, dtype=np.float32),
+        }
+    )
+    delta = np.array([[-10.0, -10.0], [-22.0, -44.0]], dtype=np.float32)
+
+    height, parameters = phase_linear_height(delta, calibration, view_angle=0)
+
+    np.testing.assert_allclose(height, [[1.0, np.nan], [1.0, 1.0]], equal_nan=True)
+    assert parameters["phase_per_mm"]["kind"] == "map"
+    assert parameters["phase_per_mm"]["shape"] == [2, 2]
+    assert parameters["height_sign"] == -1.0
+
+
 def test_triangulation_accepts_position_dependent_npz_maps():
     delta_phi = np.full((2, 3), 0.25, dtype=np.float32)
     p_map = np.array([[4.0, 5.0, 6.0], [7.0, 8.0, 9.0]], dtype=np.float32)

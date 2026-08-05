@@ -5,6 +5,7 @@ import re
 import threading
 import os
 import json
+import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
 from tkinter import (
@@ -38,10 +39,13 @@ from .io import (
     resolve_fusion_scan_dirs,
 )
 from .reference_store import ReferenceStore, validate_flat_stage
+from .aruco_alignment import estimate_aruco_transform_from_images
+from .stage_precalibration import save_stage_precalibration_json
 
 
 _DONE_TOKEN = "__PCB_FPP_DECODE_DONE__"
 _REFERENCE_DONE_TOKEN = "__PCB_FPP_REFERENCE_DONE__"
+_STAGE_CALIBRATION_DONE_TOKEN = "__PCB_FPP_STAGE_CALIBRATION_DONE__"
 
 
 def suggested_output_dir(scan_root: Path) -> Path:
@@ -64,6 +68,19 @@ def output_matches_input_scan(output_dir: Path, input_dir: Path) -> bool:
     except (OSError, ValueError, TypeError):
         return False
     return recorded == input_dir.resolve()
+
+
+def default_metric_calibration_path() -> Path | None:
+    """Locate the fixed calibration used by the streamlined production UI."""
+    filename = "ximea_phase_linear_5_10mm.npz"
+    package_root = Path(__file__).resolve().parents[1]
+    executable = Path(sys.executable)
+    candidates = (
+        Path.cwd() / "configs" / filename,
+        package_root / "configs" / filename,
+        executable.resolve().parent / "configs" / filename,
+    )
+    return next((path for path in candidates if path.is_file()), None)
 
 _OPTION_LABELS = {
     "relative": "상대 위상 (phase units)",
@@ -414,8 +431,8 @@ class FusionRegistrationSettings:
 class DecoderGui:
     def __init__(self) -> None:
         self.root = Tk()
-        self.root.title("PCB FPP 디코더")
-        self.root.minsize(760, 680)
+        self.root.title("PCB 높이 측정")
+        self.root.minsize(760, 600)
         self._option_display_vars: list[StringVar] = []
         self.input_var = StringVar()
         self.input_180_var = StringVar()
@@ -433,16 +450,21 @@ class DecoderGui:
         self.gray_decode_var = StringVar(value="auto")
         self.gray_threshold_var = StringVar(value="dynamic_raw")
         self.gray_pair_contrast_var = StringVar(value="0.04")
-        self.phase_convention_var = StringVar(value="default")
+        self.phase_convention_var = StringVar(value="swapped")
         self.phase_direction_var = StringVar(value="normal")
-        self.height_mode_var = StringVar(value="reference")
+        # Production runs always use the validated flat reference and the
+        # current phase-to-mm calibration.  These are not operator settings.
+        self.height_mode_var = StringVar(value="phase_linear")
         self.reference_scan_var = StringVar()
         self.reference_phase_var = StringVar()
         self.reference_scan_0_var = StringVar()
         self.reference_scan_180_var = StringVar()
         self.reference_phase_0_var = StringVar()
         self.reference_phase_180_var = StringVar()
-        self.calibration_config_var = StringVar()
+        calibration_path = default_metric_calibration_path()
+        self.calibration_config_var = StringVar(
+            value=str(calibration_path) if calibration_path is not None else ""
+        )
         self.height_sign_var = StringVar(value="1")
         self.fusion_mode_var = StringVar(value="modulation-weighted")
         self.fusion_max_difference_var = StringVar(value="0.25")
@@ -470,6 +492,14 @@ class DecoderGui:
         self.detrend_var = IntVar(value=0)
         self.correction_var = IntVar(value=1)
         self.reference_store = ReferenceStore()
+        self.stage_image_0_var = StringVar()
+        self.stage_image_rotated_var = StringVar()
+        self.stage_transform_output_var = StringVar()
+        self.stage_status_var = StringVar(
+            value="ArUco 0°/180° 사진으로 회전 정합을 계산합니다."
+        )
+        self._stage_result_path: Path | None = None
+        self._stage_result_status = self.stage_status_var.get()
         self.reference_input_0_var = StringVar()
         self.reference_input_180_var = StringVar()
         self.reference_status_var = StringVar()
@@ -507,18 +537,50 @@ class DecoderGui:
         self.root.bind_all("<Button-4>", self._on_mousewheel, add="+")
         self.root.bind_all("<Button-5>", self._on_mousewheel, add="+")
 
-        folders = LabelFrame(outer, text="입력 / 출력", padx=8, pady=6)
-        folders.pack(fill="x", pady=(0, 8))
-        self._folder_row(folders, "입력 스캔 폴더", self.input_var, self._choose_input)
-        self._folder_row(
-            folders,
-            "180도 스캔 폴더",
-            self.input_180_var,
-            self._choose_input_180,
-        )
-        self._folder_row(folders, "출력 폴더", self.output_var, self._choose_output)
+        Label(
+            outer,
+            text=(
+                "촬영 순서: ① 빈 스테이지 ArUco 0° → ② 회전 후 180° → 기준 등록\n"
+                "③ PCB 메인 0° → ④ 회전 후 180° → 높이 계산 · 시각화"
+            ),
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", pady=(0, 8))
 
-        reference_admin = LabelFrame(outer, text="관리자 모드 · 기준면(reference)", padx=8, pady=6)
+        stage = LabelFrame(outer, text="1. ArUco 회전 정합 계산", padx=8, pady=6)
+        stage.pack(fill="x", pady=(0, 8))
+        Label(
+            stage,
+            textvariable=self.stage_status_var,
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", pady=(0, 4))
+        self._file_row(
+            stage,
+            "ArUco 0° 사진",
+            self.stage_image_0_var,
+            self._choose_stage_image_0,
+        )
+        self._file_row(
+            stage,
+            "ArUco 180° 사진",
+            self.stage_image_rotated_var,
+            self._choose_stage_image_rotated,
+        )
+        self._file_row(
+            stage,
+            "정합 결과 파일",
+            self.stage_transform_output_var,
+            self._choose_stage_transform_output,
+        )
+        self.stage_button = Button(
+            stage,
+            text="ArUco 정합 계산 및 저장",
+            command=self._run_stage_precalibration,
+        )
+        self.stage_button.pack(fill="x", pady=(4, 0))
+
+        reference_admin = LabelFrame(outer, text="2. 높이 기준 등록", padx=8, pady=6)
         reference_admin.pack(fill="x", pady=(0, 8))
         Label(
             reference_admin,
@@ -528,141 +590,52 @@ class DecoderGui:
         ).pack(fill="x", pady=(0, 4))
         self._folder_row(
             reference_admin,
-            "기준면 0° 폴더",
+            "빈 스테이지 0° 스캔",
             self.reference_input_0_var,
             self._choose_reference_input_0,
         )
         self._folder_row(
             reference_admin,
-            "기준면 180° 폴더",
+            "빈 스테이지 180° 스캔",
             self.reference_input_180_var,
             self._choose_reference_input_180,
         )
         self.reference_button = Button(
             reference_admin,
-            text="기준면 검증 및 영구 저장",
+            text="기준면 검증 및 저장",
             command=self._register_reference,
         )
         self.reference_button.pack(fill="x", pady=(4, 0))
 
-        height = LabelFrame(outer, text="3D / 높이", padx=8, pady=6)
-        height.pack(fill="x", pady=(0, 8))
-        self._option_row(
-            height,
-            "높이 모드",
-            self.height_mode_var,
-            ("reference", "phase_linear", "triangulation", "inverse-linear"),
+        folders = LabelFrame(outer, text="3. PCB 높이 계산 · 시각화", padx=8, pady=6)
+        folders.pack(fill="x", pady=(0, 8))
+        self._folder_row(folders, "PCB 0° 스캔", self.input_var, self._choose_input)
+        self._folder_row(
+            folders,
+            "PCB 180° 스캔",
+            self.input_180_var,
+            self._choose_input_180,
         )
+        self._folder_row(folders, "결과 폴더", self.output_var, self._choose_output)
         self._file_row(
-            height,
-            "보정 설정",
+            folders,
+            "mm 보정 파일",
             self.calibration_config_var,
             self._choose_calibration_config,
         )
-        self._option_row(height, "높이 부호", self.height_sign_var, ("1", "-1"))
-        self._option_row(
-            height,
-            "합성 모드",
-            self.fusion_mode_var,
-            ("modulation-weighted", "average"),
-        )
-        self._entry_row(height, "합성 최대 차이 mm", self.fusion_max_difference_var)
-        self._option_row(
-            height,
-            "불일치 처리",
-            self.fusion_inconsistent_policy_var,
-            ("higher-confidence", "invalid"),
-        )
-        self._registration_check_row(height)
-        self._entry_row(height, "합성 중심 x,y", self.fusion_center_var)
-        self._file_row(
-            height,
-            "합성 변환",
-            self.fusion_transform_var,
-            self._choose_fusion_transform,
-        )
-        self._entry_row(height, "ArUco ID", self.aruco_ids_var)
-        self._option_row(height, "Analysis ROI", self.analysis_roi_var, ("none", "aruco"))
-        self._entry_row(height, "ROI ArUco IDs", self.analysis_aruco_ids_var)
-        self._option_row(
-            height,
-            "ROI 레이아웃",
-            self.analysis_aruco_layout_var,
-            ("stage-cross", "corners"),
-        )
-        self._entry_row(height, "Workspace W,H mm", self.analysis_workspace_size_var)
-        self._entry_row(height, "마커 반경 mm", self.analysis_marker_radius_var)
-        self._entry_row(height, "스테이지 지름 mm", self.analysis_stage_diameter_var)
-        self._entry_row(height, "PCB W,H mm", self.pcb_size_var)
-        self._entry_row(height, "PCB margin mm", self.pcb_margin_var)
-        self._entry_row(height, "PCB inset mm", self.pcb_inset_var)
-        self._option_row(
-            height,
-            "ArUco 사전",
-            self.aruco_dictionary_var,
-            ("DICT_4X4_50", "DICT_4X4_100", "DICT_5X5_50", "DICT_6X6_50"),
-        )
-        self._option_row(
-            height,
-            "ArUco 방식",
-            self.aruco_method_var,
-            ("homography", "affine"),
-        )
-        self._entry_row(height, "정합 이미지", self.registration_image_var)
-        self._entry_row(height, "최대 3D 점 수", self.max_points_var)
-
-        decode = LabelFrame(outer, text="디코딩 설정", padx=8, pady=6)
-        decode.pack(fill="x", pady=(0, 8))
-        self._option_row(
-            decode,
-            "입력 색상",
-            self.input_color_mode_var,
-            COLOR_INPUT_MODES,
-        )
-        self._entry_row(decode, "크로스토크 행렬", self.crosstalk_matrix_var)
-        self._entry_row(decode, "최소 신호", self.min_signal_var)
-        self._entry_row(decode, "포화 임계값", self.saturation_var)
-        self._entry_row(decode, "암부 임계값", self.dark_var)
-        self._entry_row(decode, "변조 임계값", self.modulation_var)
-        self._entry_row(decode, "중앙값 필터", self.median_filter_var)
-        self._option_row(
-            decode,
-            "Gray 디코딩",
-            self.gray_decode_var,
-            ("auto", "normal", "inverted_pair"),
-        )
-        self._option_row(
-            decode,
-            "Gray 임계값",
-            self.gray_threshold_var,
-            ("dynamic_raw", "normalized_0p5"),
-        )
-        self._entry_row(decode, "Gray 쌍 대비", self.gray_pair_contrast_var)
-        self._option_row(
-            decode,
-            "위상 규칙",
-            self.phase_convention_var,
-            ("default", "negated", "swapped"),
-        )
-        self._option_row(
-            decode,
-            "위상 방향",
-            self.phase_direction_var,
-            ("normal", "reverse"),
-        )
-
-        options = Frame(decode)
-        options.pack(fill="x", pady=4)
-        Checkbutton(options, text="평면 추세 제거", variable=self.detrend_var).pack(side=LEFT)
-        Checkbutton(
-            options,
-            text="경계 보정",
-            variable=self.correction_var,
-        ).pack(side=LEFT, padx=12)
+        Label(
+            folders,
+            text=(
+                "저장된 0°/180° 기준면과 위 ArUco 정합 결과를 사용합니다. "
+                "기존 stage_precalibration.json도 자동으로 불러옵니다."
+            ),
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", pady=(4, 0))
 
         actions = Frame(outer)
         actions.pack(fill="x", pady=(0, 8))
-        self.run_button = Button(actions, text="디코딩 실행", command=self._run_decode)
+        self.run_button = Button(actions, text="높이 계산 및 시각화", command=self._run_decode)
         self.run_button.pack(side=LEFT, fill="x", expand=True)
         Button(actions, text="출력 폴더 열기", command=self._open_output).pack(
             side=RIGHT, padx=(8, 0)
@@ -833,6 +806,109 @@ class DecoderGui:
         finally:
             self.messages.put(_REFERENCE_DONE_TOKEN)
 
+    def _choose_stage_image_0(self) -> None:
+        filename = filedialog.askopenfilename(
+            title="ArUco 0° 사진 선택",
+            filetypes=(("이미지", "*.png *.jpg *.jpeg *.bmp *.tif *.tiff"), ("모든 파일", "*.*")),
+        )
+        if not filename:
+            return
+        path = Path(filename)
+        self.stage_image_0_var.set(str(path))
+        if not self.stage_transform_output_var.get().strip():
+            self.stage_transform_output_var.set(str(path.parent / "stage_precalibration.json"))
+
+    def _choose_stage_image_rotated(self) -> None:
+        filename = filedialog.askopenfilename(
+            title="회전 후 ArUco 180° 사진 선택",
+            filetypes=(("이미지", "*.png *.jpg *.jpeg *.bmp *.tif *.tiff"), ("모든 파일", "*.*")),
+        )
+        if filename:
+            self.stage_image_rotated_var.set(filename)
+
+    def _choose_stage_transform_output(self) -> None:
+        filename = filedialog.asksaveasfilename(
+            title="ArUco 정합 결과 저장",
+            defaultextension=".json",
+            filetypes=(("JSON", "*.json"), ("모든 파일", "*.*")),
+        )
+        if filename:
+            self.stage_transform_output_var.set(filename)
+
+    def _run_stage_precalibration(self) -> None:
+        image_0_text = self.stage_image_0_var.get().strip()
+        image_rotated_text = self.stage_image_rotated_var.get().strip()
+        output_text = self.stage_transform_output_var.get().strip()
+        if not image_0_text or not image_rotated_text or not output_text:
+            messagebox.showerror(
+                "ArUco 정합 오류",
+                "ArUco 0° 사진, 180° 사진, 정합 결과 파일을 모두 지정해 주세요.",
+            )
+            return
+        image_0 = Path(image_0_text)
+        image_rotated = Path(image_rotated_text)
+        output = Path(output_text)
+        try:
+            marker_ids = self._parse_aruco_ids(self.aruco_ids_var.get())
+        except ValueError as exc:
+            messagebox.showerror("ArUco 정합 오류", _format_exception_for_user(exc))
+            return
+        self.stage_button.config(state="disabled")
+        threading.Thread(
+            target=self._stage_precalibration_worker,
+            args=(
+                image_0,
+                image_rotated,
+                output,
+                self.aruco_dictionary_var.get(),
+                marker_ids,
+                self.aruco_method_var.get(),
+            ),
+            daemon=True,
+        ).start()
+
+    def _stage_precalibration_worker(
+        self,
+        image_0: Path,
+        image_rotated: Path,
+        output: Path,
+        dictionary_name: str,
+        marker_ids: tuple[int, ...],
+        method: str,
+    ) -> None:
+        try:
+            self.messages.put("ArUco 회전 정합을 계산하고 있습니다.\n")
+            result = estimate_aruco_transform_from_images(
+                image_0,
+                image_rotated,
+                dictionary_name=dictionary_name,
+                marker_ids=marker_ids,
+                method=method,
+            )
+            output.parent.mkdir(parents=True, exist_ok=True)
+            save_stage_precalibration_json(
+                output,
+                result,
+                image_0=image_0,
+                image_rotated=image_rotated,
+                stage_command_value=250.0,
+                intended_rotation_deg=180.0,
+                dictionary_name=dictionary_name,
+                method=method,
+                ransac_threshold_px=3.0,
+            )
+            self._stage_result_path = output
+            self._stage_result_status = (
+                f"정합 완료 · 재투영 RMSE {result.reprojection_rmse_px:.3f} px"
+            )
+            self.messages.put(f"ArUco 정합 완료: {output}\n")
+        except Exception as exc:
+            self._stage_result_path = None
+            self._stage_result_status = "정합 실패 · 사진과 ArUco 마커를 확인하세요."
+            self.messages.put(f"ArUco 정합 실패.\n{_format_exception_for_user(exc)}\n")
+        finally:
+            self.messages.put(_STAGE_CALIBRATION_DONE_TOKEN)
+
     def _choose_input(self) -> None:
         folder = filedialog.askdirectory(title="스캔 폴더 선택")
         if folder:
@@ -843,6 +919,8 @@ class DecoderGui:
             scan_root = input_0.parent if input_0.name.lower().startswith(("angle_", "deg_")) else input_0
             stage_precalibration = scan_root / "stage_precalibration.json"
             if stage_precalibration.is_file():
+                self.stage_transform_output_var.set(str(stage_precalibration))
+                self.stage_status_var.set("기존 ArUco 정합 결과를 불러왔습니다.")
                 self.fusion_transform_var.set(str(stage_precalibration))
                 self.registration_transform_var.set(1)
                 self.registration_rotation_var.set(0)
@@ -984,7 +1062,7 @@ class DecoderGui:
         if use_saved_reference:
             if not self.reference_store.is_available():
                 raise ValueError(
-                    "저장된 기준면(reference)이 없습니다. 관리자 모드에서 빈 스테이지 0°/180° 기준면을 등록하세요."
+                    "저장된 기준면이 없습니다. GUI 2단계에서 빈 스테이지 0°/180° 기준면을 등록하세요."
                 )
             reference_phase_0 = self.reference_store.phase_0_path
             reference_phase_180 = self.reference_store.phase_180_path
@@ -1184,9 +1262,8 @@ class DecoderGui:
                 f"출력 폴더: {output_dir}\n"
                 f"{ratio_label}: {ratio:.3f}\n"
                 f"촬영 진단: {output_dir / 'capture_diagnosis.txt'}\n"
-                f"높이 히트맵: {output_dir / 'height' / 'height_heatmap.png'}\n"
-                f"포인트 클라우드: {output_dir / 'point_cloud' / 'point_cloud.ply'}\n"
-                f"3D 미리보기: {output_dir / 'point_cloud' / 'point_cloud_preview.png'}\n"
+                f"Z 높이 히트맵: {output_dir / 'height' / 'height_heatmap.png'}\n"
+                f"Z 높이 데이터(mm): {output_dir / 'height' / 'height_mm.npy'}\n"
             )
         except Exception as exc:
             self.messages.put(f"오류가 발생했습니다.\n{_format_exception_for_user(exc)}\n")
@@ -1205,6 +1282,17 @@ class DecoderGui:
             if msg == _REFERENCE_DONE_TOKEN:
                 self.reference_button.config(state="normal")
                 self._refresh_reference_status()
+                continue
+            if msg == _STAGE_CALIBRATION_DONE_TOKEN:
+                self.stage_button.config(state="normal")
+                self.stage_status_var.set(self._stage_result_status)
+                if self._stage_result_path is not None:
+                    self.stage_transform_output_var.set(str(self._stage_result_path))
+                    self.fusion_transform_var.set(str(self._stage_result_path))
+                    self.registration_transform_var.set(1)
+                    self.registration_rotation_var.set(0)
+                    self.registration_aruco_var.set(0)
+                    self.registration_phase_var.set(0)
                 continue
             self.log.insert(END, msg)
             self.log.see(END)

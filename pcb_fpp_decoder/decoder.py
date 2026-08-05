@@ -177,7 +177,7 @@ class HeightResult:
     stats: dict[str, float] = field(default_factory=dict)
     reference_used: bool = False
     delta_phase: np.ndarray | None = None
-    calibration_parameters: dict[str, float] = field(default_factory=dict)
+    calibration_parameters: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -485,6 +485,7 @@ class PcbFppDecoder:
                     delta_phi,
                     calibration,
                     fallback_sign=self.config.height_sign,
+                    view_angle=view_angle,
                 )
                 metric = True
                 units = "mm"
@@ -509,6 +510,7 @@ class PcbFppDecoder:
                     "height_mode must be relative, reference, phase_linear, triangulation, or inverse-linear"
                 )
 
+        mask &= np.isfinite(height)
         height = np.where(mask, height, np.nan).astype(np.float32)
         if self.config.median_filter and self.config.median_filter > 1:
             height = self._median_filter(height, self.config.median_filter, mask)
