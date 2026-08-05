@@ -41,7 +41,7 @@
 11. merge 중 모든 bracket이 포화된 픽셀과 모든 bracket이 너무 어두운 픽셀의 mask를 저장합니다. 예: `hdr_masks/pattern_002_saturated.png`, `hdr_masks/pattern_002_dark.png`.
 12. 기준 평면 촬영 모드를 추가합니다. 출력 폴더 이름 또는 metadata에 `scan_type: "reference"`를 기록합니다.
 13. 대상 촬영 모드를 추가합니다. 출력 폴더 이름 또는 metadata에 `scan_type: "object"`를 기록합니다.
-14. 기준/대상 촬영 모두 프로젝터 기울기 30도, Scheimpflug 또는 수동 초점 확인 상태, 리그/보정 id를 metadata에 기록할 수 있게 합니다.
+14. 기준/대상 촬영 모두 `rig_layout: "camera_tilt_30_projector_vertical"`, `camera_tilt_deg: 30.0`, `projector_tilt_deg: 0.0`, 카메라 Scheimpflug 또는 수동 초점 확인 상태, 새 리그/보정 id를 metadata에 기록합니다.
 15. 프로젝터 keystone 사전 왜곡은 기본으로 하지 않습니다. metadata에 `keystone_predistortion: false`를 기록합니다.
 16. 촬영 완료 후 최종 decode 폴더에 0..21 pattern id가 모두 있는지 검증합니다. 누락되면 오류를 띄우고 누락 id를 표시합니다.
 17. 기존 14장 촬영 모드는 legacy 옵션으로 남겨도 되지만 기본 촬영 모드는 22장 + HDR merge로 합니다.
@@ -75,7 +75,7 @@
 11. merge 중 모든 bracket이 포화된 픽셀과 모든 bracket이 너무 어두운 픽셀의 mask를 저장합니다. 예: `hdr_masks/pattern_002_saturated.png`, `hdr_masks/pattern_002_dark.png`.
 12. 기준 평면 촬영 모드를 추가합니다. 출력 폴더 이름 또는 metadata에 `scan_type: "reference"`를 기록합니다.
 13. 대상 촬영 모드를 추가합니다. 출력 폴더 이름 또는 metadata에 `scan_type: "object"`를 기록합니다.
-14. 기준/대상 촬영 모두 프로젝터 기울기 30도, 수동 초점 확인 상태, 폰 마운트/보정 id를 metadata에 기록할 수 있게 합니다.
+14. 기준/대상 촬영 모두 `rig_layout: "camera_tilt_30_projector_vertical"`, `camera_tilt_deg: 30.0`, `projector_tilt_deg: 0.0`, 수동 초점 확인 상태, 폰 마운트/보정 id를 metadata에 기록합니다.
 15. 프로젝터 keystone 사전 왜곡은 기본으로 하지 않습니다. metadata에 `keystone_predistortion: false`를 기록합니다.
 16. 촬영 완료 후 최종 decode 폴더에 0..21 pattern id가 모두 있는지 검증합니다. 누락되면 오류를 띄우고 누락 id를 표시합니다.
 17. 기존 14장 촬영 모드는 legacy 옵션으로 남겨도 되지만 기본 촬영 모드는 22장 + HDR merge로 합니다.
