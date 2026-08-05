@@ -34,6 +34,13 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True, help="Output .npz calibration")
     parser.add_argument("--report", type=Path, required=True, help="Output JSON fit report")
+    parser.add_argument(
+        "--rig-layout",
+        choices=("camera_tilt_30_projector_vertical", "projector_tilt_30_camera_vertical"),
+        default="camera_tilt_30_projector_vertical",
+    )
+    parser.add_argument("--camera-tilt-deg", type=float, default=30.0)
+    parser.add_argument("--projector-tilt-deg", type=float, default=0.0)
     return parser
 
 
@@ -185,12 +192,31 @@ def main() -> None:
         arrays.update(view_arrays)
         views[f"deg_{view}"] = view_report
 
+    rig = {
+        "layout": args.rig_layout,
+        "camera_tilt_deg": float(args.camera_tilt_deg),
+        "projector_tilt_deg": float(args.projector_tilt_deg),
+    }
+    if rig["layout"] == "camera_tilt_30_projector_vertical" and (
+        rig["camera_tilt_deg"] != 30.0 or rig["projector_tilt_deg"] != 0.0
+    ):
+        raise ValueError("camera_tilt_30_projector_vertical requires camera=30 and projector=0")
+    arrays.update(
+        {
+            "rig_layout": np.array(rig["layout"]),
+            "camera_tilt_deg": np.array(rig["camera_tilt_deg"], dtype=np.float32),
+            "projector_tilt_deg": np.array(rig["projector_tilt_deg"], dtype=np.float32),
+            "calibration_id": np.array(calibration_id),
+        }
+    )
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(args.output, **arrays)
     report = {
         "calibration_id": calibration_id,
         "method": "position_dependent_phase_linear_column_offset",
         "units": "mm",
+        "rig": rig,
         "common_roi_xyxy": list(roi),
         "image_shape": list(first_delta.shape),
         "samples": [

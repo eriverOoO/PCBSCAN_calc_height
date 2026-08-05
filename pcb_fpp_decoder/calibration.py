@@ -12,6 +12,8 @@ CalibrationValue = float | np.ndarray
 MORENO_TAUBIN_RECOMMENDED_PATCH_SIZE_PX = 47
 MORENO_TAUBIN_MIN_POSE_COUNT = 6
 PCB_REPROJECTION_TARGET_MAX_PX = 0.35
+RIG_LAYOUT_CAMERA_TILT_30 = "camera_tilt_30_projector_vertical"
+RIG_LAYOUT_PROJECTOR_TILT_30 = "projector_tilt_30_camera_vertical"
 
 
 @dataclass
@@ -26,6 +28,15 @@ class Calibration:
 
     def get_float(self, *names: str) -> float | None:
         for name in names:
+            for candidate in (name, name.replace(".", "_")):
+                if candidate not in self.arrays:
+                    continue
+                value = np.asarray(self.arrays[candidate])
+                if value.ndim == 0:
+                    try:
+                        return float(value.item())
+                    except (TypeError, ValueError):
+                        pass
             value = _deep_get(self.data, name)
             if value is not None:
                 try:
@@ -51,6 +62,96 @@ class Calibration:
             if array.ndim == 0:
                 return float(array)
             return array
+        return None
+
+    def get_string(self, *names: str) -> str | None:
+        for name in names:
+            for candidate in (name, name.replace(".", "_")):
+                if candidate in self.arrays:
+                    value = np.asarray(self.arrays[candidate])
+                    if value.ndim == 0:
+                        text = str(value.item()).strip()
+                        if text:
+                            return text
+        for name in names:
+            value = _deep_get(self.data, name)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+
+def metric_rig_compatibility(
+    calibration: Calibration | None,
+    capture_summary: dict[str, Any],
+) -> dict[str, Any]:
+    """Reject metric calibration made for a different camera/projector pose.
+
+    Old captures without pose metadata remain decodable but are reported as
+    unverifiable. New capture-controller logs carry the layout and both tilt
+    values, so a missing or mismatched calibration provenance becomes an error.
+    """
+    capture_layout = _summary_string(capture_summary, "rig_layout")
+    camera_tilt = _summary_float(capture_summary, "camera_tilt_deg")
+    projector_tilt = _summary_float(capture_summary, "projector_tilt_deg")
+    capture_id = _summary_string(capture_summary, "calibration_id")
+    observed = {
+        "rig_layout": capture_layout,
+        "camera_tilt_deg": camera_tilt,
+        "projector_tilt_deg": projector_tilt,
+        "calibration_id": capture_id,
+    }
+    if capture_layout is None and camera_tilt is None and projector_tilt is None:
+        return {"status": "unverifiable", "capture": observed, "calibration": None}
+    if calibration is None or not calibration.is_loaded:
+        return {"status": "missing_calibration", "capture": observed, "calibration": None}
+
+    expected = {
+        "rig_layout": calibration.get_string("rig.layout", "rig_layout"),
+        "camera_tilt_deg": calibration.get_float("rig.camera_tilt_deg", "camera_tilt_deg"),
+        "projector_tilt_deg": calibration.get_float(
+            "rig.projector_tilt_deg", "projector_tilt_deg"
+        ),
+        "calibration_id": calibration.get_string("calibration_id", "rig.calibration_id"),
+    }
+    missing = [
+        name
+        for name in ("rig_layout", "camera_tilt_deg", "projector_tilt_deg")
+        if expected[name] is None
+    ]
+    if missing:
+        raise ValueError(
+            "metric calibration lacks rig provenance "
+            f"({', '.join(missing)}); create a new calibration for capture rig "
+            f"{capture_layout or 'with declared camera/projector tilts'}"
+        )
+
+    mismatches: list[str] = []
+    if capture_layout is not None and capture_layout != expected["rig_layout"]:
+        mismatches.append(f"rig_layout capture={capture_layout!r} calibration={expected['rig_layout']!r}")
+    for name in ("camera_tilt_deg", "projector_tilt_deg"):
+        captured = observed[name]
+        calibrated = expected[name]
+        if captured is not None and calibrated is not None and not np.isclose(captured, calibrated):
+            mismatches.append(f"{name} capture={captured:g} calibration={calibrated:g}")
+    if capture_id is not None and expected["calibration_id"] not in (None, capture_id):
+        mismatches.append(
+            f"calibration_id capture={capture_id!r} calibration={expected['calibration_id']!r}"
+        )
+    if mismatches:
+        raise ValueError("metric calibration is incompatible with capture rig: " + "; ".join(mismatches))
+    return {"status": "matched", "capture": observed, "calibration": expected}
+
+
+def _summary_string(summary: dict[str, Any], name: str) -> str | None:
+    value = summary.get(name)
+    return str(value).strip() if isinstance(value, str) and value.strip() else None
+
+
+def _summary_float(summary: dict[str, Any], name: str) -> float | None:
+    value = summary.get(name)
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
         return None
 
 

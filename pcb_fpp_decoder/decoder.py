@@ -14,6 +14,7 @@ from .calibration import (
     Calibration,
     inverse_linear_height,
     load_calibration,
+    metric_rig_compatibility,
     phase_linear_height,
     structured_light_calibration_report,
     triangulation_height,
@@ -551,6 +552,11 @@ class PcbFppDecoder:
         if analysis_roi is not None:
             _apply_analysis_roi_to_absolute(absolute, analysis_roi.mask)
         calibration = load_calibration(self.config.calibration_config)
+        rig_compatibility = (
+            metric_rig_compatibility(calibration, patterns.capture_summary)
+            if self.config.height_mode in ("phase_linear", "triangulation", "inverse-linear")
+            else {"status": "not_required"}
+        )
         height = self.compute_height(absolute, calibration, view_angle=view_angle)
         report = self._build_report(
             patterns,
@@ -560,6 +566,7 @@ class PcbFppDecoder:
             absolute,
             height,
             calibration,
+            rig_compatibility,
             analysis_roi,
         )
         return DecodeResult(
@@ -1128,6 +1135,7 @@ class PcbFppDecoder:
         absolute: AbsolutePhaseResult,
         height: HeightResult,
         calibration: Calibration | None,
+        rig_compatibility: dict[str, Any],
         analysis_roi: AnalysisRoiResult | None = None,
     ) -> dict[str, Any]:
         shape = patterns.shape
@@ -1194,6 +1202,7 @@ class PcbFppDecoder:
             "calibration": {
                 "used": bool(calibration and calibration.is_loaded),
                 "path": str(calibration.path) if calibration and calibration.path else None,
+                "rig_compatibility": rig_compatibility,
                 "structured_light": structured_light_calibration_report(calibration),
             },
             "phone_capture": patterns.capture_summary,
@@ -1400,20 +1409,30 @@ def _optical_setup_report(
     calibration: Calibration | None,
     height: HeightResult,
 ) -> dict[str, Any]:
+    rig_layout = None
+    camera_tilt_degrees = None
     tilt_degrees = None
     loaded_arrays: dict[str, list[int]] = {}
     if calibration is not None:
         tilt_degrees = calibration.get_float(
+            "rig.projector_tilt_deg",
+            "projector_tilt_deg",
             "projector.tilt_degrees",
             "projector_tilt_degrees",
             "optics.projector_tilt_degrees",
             "optics.tilt_degrees",
         )
+        camera_tilt_degrees = calibration.get_float(
+            "rig.camera_tilt_deg", "camera_tilt_deg", "camera.tilt_degrees"
+        )
+        rig_layout = calibration.get_string("rig.layout", "rig_layout")
         loaded_arrays = {
             key: list(np.asarray(value).shape) for key, value in calibration.arrays.items()
         }
 
     return {
+        "rig_layout": rig_layout,
+        "camera_tilt_degrees": camera_tilt_degrees,
         "projector_tilt_degrees": tilt_degrees,
         "focus_compensation": (
             "hardware/Scheimpflug/manual focus; this decoder does not software-deblur "

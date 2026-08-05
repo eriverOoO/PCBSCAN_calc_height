@@ -569,6 +569,8 @@ def summarize_phone_capture(
             "scan_type": data.get("scan_type") or metadata.get("scan_type"),
             "decode_dir": data.get("decode_dir"),
             "angles_deg": data.get("angles_deg"),
+            "rig_layout": metadata.get("rig_layout"),
+            "camera_tilt_deg": metadata.get("camera_tilt_deg"),
             "projector_tilt_deg": metadata.get("projector_tilt_deg"),
             "phone_mount_id": metadata.get("phone_mount_id"),
             "rig_id": metadata.get("rig_id"),
@@ -605,6 +607,11 @@ def summarize_phone_capture(
         warnings.append(
             "Projector keystone pre-distortion is enabled; reference phase subtraction expects raw projector geometry."
         )
+    if metadata.get("rig_layout") == "camera_tilt_30_projector_vertical":
+        if metadata.get("camera_tilt_deg") != 30.0 or metadata.get("projector_tilt_deg") != 0.0:
+            warnings.append(
+                "camera_tilt_30_projector_vertical requires camera_tilt_deg=30 and projector_tilt_deg=0."
+            )
     if hdr.get("enabled") is not True:
         warnings.append("HDR bracket merge is not marked enabled; solder glare may reduce valid pixels.")
 

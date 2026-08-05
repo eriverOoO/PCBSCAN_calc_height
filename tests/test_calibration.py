@@ -3,10 +3,55 @@ import pytest
 
 from pcb_fpp_decoder.calibration import (
     Calibration,
+    metric_rig_compatibility,
     phase_linear_height,
     structured_light_calibration_report,
     triangulation_height,
 )
+
+
+def test_metric_rig_compatibility_accepts_camera_tilt_calibration_provenance():
+    calibration = Calibration(
+        arrays={
+            "rig_layout": np.array("camera_tilt_30_projector_vertical"),
+            "camera_tilt_deg": np.array(30.0, dtype=np.float32),
+            "projector_tilt_deg": np.array(0.0, dtype=np.float32),
+            "calibration_id": np.array("camera_tilt_30_v1"),
+        }
+    )
+    report = metric_rig_compatibility(
+        calibration,
+        {
+            "rig_layout": "camera_tilt_30_projector_vertical",
+            "camera_tilt_deg": 30.0,
+            "projector_tilt_deg": 0.0,
+            "calibration_id": "camera_tilt_30_v1",
+        },
+    )
+
+    assert report["status"] == "matched"
+
+
+def test_metric_rig_compatibility_rejects_old_projector_tilt_calibration():
+    calibration = Calibration(
+        data={
+            "rig": {
+                "layout": "projector_tilt_30_camera_vertical",
+                "camera_tilt_deg": 0.0,
+                "projector_tilt_deg": 30.0,
+            }
+        }
+    )
+
+    with pytest.raises(ValueError, match="rig_layout"):
+        metric_rig_compatibility(
+            calibration,
+            {
+                "rig_layout": "camera_tilt_30_projector_vertical",
+                "camera_tilt_deg": 30.0,
+                "projector_tilt_deg": 0.0,
+            },
+        )
 
 
 def test_phase_linear_height_uses_nested_calibration_sign_offset_and_scale():
