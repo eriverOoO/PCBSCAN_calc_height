@@ -420,7 +420,7 @@ def test_cli_defaults_use_stage_aruco_settings(tmp_path):
     assert config.output_profile == "compact"
     assert config.analysis_roi_mode == "aruco"
     assert config.analysis_aruco_layout == "stage-cross"
-    assert config.analysis_marker_center_radius_mm == 42.0
+    assert config.analysis_marker_center_radius_mm == 25.0
     assert config.analysis_stage_diameter_mm == 105.0
     assert config.pcb_width_mm == 30.0
     assert config.pcb_height_mm == 30.0
@@ -758,3 +758,41 @@ def test_four_direction_decode_aligns_and_fuses_all_cardinal_views(tmp_path):
         (output_dir / "capture_logs" / "manifest.json").read_text(encoding="utf-8")
     )
     assert set(manifest["views"]) == {"deg_0", "deg_90", "deg_180", "deg_270"}
+
+
+def test_cli_four_direction_auto_discovers_cardinal_folders(tmp_path):
+    scan_root = tmp_path / "captures" / "scan_four_cli"
+    output_dir = tmp_path / "processed" / "scan_four_cli"
+    for angle in (0, 90, 180, 270):
+        _write_synthetic_scan(scan_root / f"angle_{angle:03d}")
+    identity = tmp_path / "identity_transform.json"
+    identity.write_text(
+        json.dumps({"matrix": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]}),
+        encoding="utf-8",
+    )
+
+    exit_code = cli_main(
+        [
+            "--input",
+            str(scan_root),
+            "--output",
+            str(output_dir),
+            "--four-direction",
+            "--fusion-registration",
+            "precomputed",
+            "--fusion-transform-90",
+            str(identity),
+            "--fusion-transform",
+            str(identity),
+            "--fusion-transform-270",
+            str(identity),
+            "--analysis-roi",
+            "none",
+            "--median-filter",
+            "0",
+        ]
+    )
+
+    assert exit_code == 0
+    report = json.loads((output_dir / "fusion_report.json").read_text(encoding="utf-8"))
+    assert report["fusion"]["view_angles_deg"] == [0, 90, 180, 270]

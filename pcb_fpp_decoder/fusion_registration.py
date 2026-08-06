@@ -17,7 +17,7 @@ from .phase_correlation_alignment import (
 )
 
 
-FUSION_REGISTRATION_CHOICES = ("rotation-180", "aruco", "phase-correlation")
+FUSION_REGISTRATION_CHOICES = ("rotation-180", "aruco", "phase-correlation", "precomputed")
 
 
 @dataclass(frozen=True)
@@ -39,6 +39,8 @@ def estimate_and_save_fusion_transform(
     aruco_ids: Sequence[int] = (0, 1, 2, 3),
     aruco_image: str = "pattern_000.png",
     aruco_method: str = "homography",
+    aruco_marker_center_radius_mm: float = 25.0,
+    aruco_marker_black_square_mm: float = 11.4,
     aruco_ransac_threshold_px: float = 3.0,
     phase_correlation_image: str = "pattern_000.png",
     phase_correlation_use_hann: bool = True,
@@ -55,6 +57,8 @@ def estimate_and_save_fusion_transform(
         aruco_ids=aruco_ids,
         aruco_image=aruco_image,
         aruco_method=aruco_method,
+        aruco_marker_center_radius_mm=aruco_marker_center_radius_mm,
+        aruco_marker_black_square_mm=aruco_marker_black_square_mm,
         aruco_ransac_threshold_px=aruco_ransac_threshold_px,
         phase_correlation_image=phase_correlation_image,
         phase_correlation_use_hann=phase_correlation_use_hann,
@@ -81,6 +85,8 @@ def estimate_and_save_view_transform(
     phase_correlation_use_hann: bool = True,
     phase_correlation_min_response: float = 0.0,
 ) -> EstimatedFusionTransform | None:
+    if registration == "precomputed":
+        return None
     if registration == "rotation-180":
         if int(source_angle_deg) % 360 != 180:
             raise ValueError("rotation-180 registration only supports the 180-degree view")

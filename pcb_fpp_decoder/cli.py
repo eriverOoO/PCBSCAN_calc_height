@@ -9,12 +9,15 @@ from .decoder import DecodeConfig, OUTPUT_PROFILES, PcbFppDecoder
 from .fusion_registration import (
     FUSION_REGISTRATION_CHOICES,
     estimate_and_save_fusion_transform,
+    estimate_and_save_view_transform,
 )
 from .io import (
     COLOR_INPUT_MODES,
+    FOUR_DIRECTION_ANGLES,
     has_decode_pattern_files,
     parse_crosstalk_matrix,
     resolve_decode_input_dir,
+    resolve_multiview_scan_dirs,
 )
 
 
@@ -27,6 +30,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--input-180",
         type=Path,
         help="Optional 180-degree scan folder to fuse with --input",
+    )
+    parser.add_argument("--input-90", type=Path, help="Optional 90-degree scan folder")
+    parser.add_argument("--input-270", type=Path, help="Optional 270-degree scan folder")
+    parser.add_argument(
+        "--four-direction",
+        action="store_true",
+        help="Decode and fuse 0/90/180/270 folders from one scan root",
     )
     parser.add_argument(
         "--input-angle",
@@ -58,6 +68,12 @@ def build_parser() -> argparse.ArgumentParser:
             "Reject input unless scan_log.json proves a locked hardware-triggered "
             "pattern/exposure sequence and fixed linear Mono camera settings."
         ),
+    )
+    parser.add_argument(
+        "--stage-angle-tolerance-deg",
+        type=float,
+        default=0.5,
+        help="Allowed commanded/measured stage angle error in strict four-view mode",
     )
     parser.add_argument("--projector-width", type=int, default=1280)
     parser.add_argument("--gray-bits", type=int, default=8)
@@ -137,21 +153,25 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="0-degree flat reference scan; overrides --reference-scan for the 0 view",
     )
+    parser.add_argument("--reference-scan-90", type=Path, help="90-degree flat reference scan")
     parser.add_argument(
         "--reference-scan-180",
         type=Path,
         help="180-degree flat reference scan; overrides --reference-scan for the 180 view",
     )
+    parser.add_argument("--reference-scan-270", type=Path, help="270-degree flat reference scan")
     parser.add_argument(
         "--reference-phase-0",
         type=Path,
         help="0-degree precomputed reference phase; overrides --reference-phase",
     )
+    parser.add_argument("--reference-phase-90", type=Path, help="90-degree reference phase")
     parser.add_argument(
         "--reference-phase-180",
         type=Path,
         help="180-degree precomputed reference phase; overrides --reference-phase",
     )
+    parser.add_argument("--reference-phase-270", type=Path, help="270-degree reference phase")
     parser.add_argument(
         "--calibration-config",
         type=Path,
@@ -189,6 +209,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON/NPY/NPZ 2x3 affine or 3x3 homography mapping 180-degree pixels to 0-degree pixels",
     )
     parser.add_argument(
+        "--fusion-transform-90",
+        type=Path,
+        help="Transform mapping 90-degree pixels into the 0-degree frame",
+    )
+    parser.add_argument(
+        "--fusion-transform-270",
+        type=Path,
+        help="Transform mapping 270-degree pixels into the 0-degree frame",
+    )
+    parser.add_argument(
         "--fusion-registration",
         choices=FUSION_REGISTRATION_CHOICES,
         default="aruco",
@@ -216,9 +246,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--aruco-method",
-        choices=("homography", "affine"),
-        default="homography",
+        choices=("stage-cross", "homography", "affine"),
+        default="stage-cross",
         help="Transform model for ArUco marker registration",
+    )
+    parser.add_argument(
+        "--aruco-marker-center-radius-mm",
+        type=float,
+        default=25.0,
+        help="Stage-cross marker center radius; r25 PDF uses 25 mm",
+    )
+    parser.add_argument(
+        "--aruco-marker-black-square-mm",
+        type=float,
+        default=11.4,
+        help="Printed black ArUco square size; total15/quiet1.8 layout uses 11.4 mm",
     )
     parser.add_argument(
         "--aruco-ransac-threshold-px",
@@ -275,7 +317,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--analysis-marker-center-radius-mm",
         type=float,
-        default=42.0,
+        default=25.0,
         help="For --analysis-aruco-layout stage-cross, marker center radius from stage center",
     )
     parser.add_argument(
@@ -362,9 +404,13 @@ def config_from_args(args: argparse.Namespace) -> DecodeConfig:
         reference_scan=args.reference_scan,
         reference_phase=args.reference_phase,
         reference_scan_0=args.reference_scan_0,
+        reference_scan_90=args.reference_scan_90,
         reference_scan_180=args.reference_scan_180,
+        reference_scan_270=args.reference_scan_270,
         reference_phase_0=args.reference_phase_0,
+        reference_phase_90=args.reference_phase_90,
         reference_phase_180=args.reference_phase_180,
+        reference_phase_270=args.reference_phase_270,
         calibration_config=args.calibration_config,
         height_sign=args.height_sign,
         fusion_mode=args.fusion_mode,
@@ -372,6 +418,8 @@ def config_from_args(args: argparse.Namespace) -> DecodeConfig:
         fusion_inconsistent_policy=args.fusion_inconsistent_policy,
         fusion_center=tuple(args.fusion_center) if args.fusion_center else None,
         fusion_transform=args.fusion_transform,
+        fusion_transform_90=args.fusion_transform_90,
+        fusion_transform_270=args.fusion_transform_270,
         analysis_roi_mode=analysis_roi_mode,
         analysis_aruco_dictionary=args.analysis_aruco_dictionary,
         analysis_aruco_ids=tuple(args.analysis_aruco_ids),
@@ -394,49 +442,97 @@ def config_from_args(args: argparse.Namespace) -> DecodeConfig:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    args.input = resolve_decode_input_dir(args.input, preferred_angle=args.input_angle)
-    if args.input_180 is not None:
-        args.input_180 = resolve_decode_input_dir(
-            args.input_180,
-            preferred_angle=args.input_180_angle,
-        )
-    elif args.auto_phone_fusion:
-        candidate = resolve_decode_input_dir(args.input.parent, preferred_angle=args.input_180_angle)
-        if candidate == args.input or not has_decode_pattern_files(candidate):
-            candidate = resolve_decode_input_dir(args.input, preferred_angle=args.input_180_angle)
-        if candidate == args.input or not has_decode_pattern_files(candidate):
-            raise SystemExit(
-                "--auto-phone-fusion could not find a decoder-ready "
-                f"angle_{args.input_180_angle:03d} folder"
+    selected_input = args.input
+    four_direction = bool(args.four_direction or args.input_90 or args.input_270)
+    multiview_inputs: dict[int, Path] | None = None
+    if four_direction:
+        multiview_inputs = resolve_multiview_scan_dirs(selected_input)
+        explicit = {90: args.input_90, 180: args.input_180, 270: args.input_270}
+        for angle, path in explicit.items():
+            if path is not None:
+                multiview_inputs[angle] = resolve_decode_input_dir(path, preferred_angle=angle)
+        if 0 not in multiview_inputs:
+            candidate_0 = resolve_decode_input_dir(selected_input, preferred_angle=0)
+            if has_decode_pattern_files(candidate_0):
+                multiview_inputs[0] = candidate_0
+        missing = [angle for angle in FOUR_DIRECTION_ANGLES if angle not in multiview_inputs]
+        if missing:
+            parser.error(f"four-direction scan is missing decoder-ready angles: {missing}")
+        args.input = multiview_inputs[0]
+        args.input_90 = multiview_inputs[90]
+        args.input_180 = multiview_inputs[180]
+        args.input_270 = multiview_inputs[270]
+    else:
+        args.input = resolve_decode_input_dir(selected_input, preferred_angle=args.input_angle)
+        if args.input_180 is not None:
+            args.input_180 = resolve_decode_input_dir(
+                args.input_180,
+                preferred_angle=args.input_180_angle,
             )
-        args.input_180 = candidate
+        elif args.auto_phone_fusion:
+            candidate = resolve_decode_input_dir(args.input.parent, preferred_angle=args.input_180_angle)
+            if candidate == args.input or not has_decode_pattern_files(candidate):
+                candidate = resolve_decode_input_dir(args.input, preferred_angle=args.input_180_angle)
+            if candidate == args.input or not has_decode_pattern_files(candidate):
+                raise SystemExit(
+                    "--auto-phone-fusion could not find a decoder-ready "
+                    f"angle_{args.input_180_angle:03d} folder"
+                )
+            args.input_180 = candidate
 
     if args.require_hardware_capture:
         try:
-            _require_hardware_capture(args.input)
-            if args.input_180:
-                _require_hardware_capture(args.input_180)
+            if multiview_inputs is not None:
+                for angle, path in multiview_inputs.items():
+                    _require_hardware_capture(
+                        path,
+                        expected_angle=angle,
+                        stage_angle_tolerance_deg=args.stage_angle_tolerance_deg,
+                    )
+            else:
+                _require_hardware_capture(args.input)
+                if args.input_180:
+                    _require_hardware_capture(args.input_180)
         except ValueError as exc:
             parser.error(str(exc))
 
     config = config_from_args(args)
     try:
-        estimated_transform = _prepare_fusion_registration(args, config) if args.input_180 else None
+        estimated_transforms = []
+        if multiview_inputs is not None:
+            estimated_transforms = _prepare_multiview_registration(args, config, multiview_inputs)
+        elif args.input_180:
+            estimated = _prepare_fusion_registration(args, config)
+            estimated_transforms = [estimated] if estimated is not None else []
         decoder = PcbFppDecoder(config)
-        if args.input_180:
+        if multiview_inputs is not None:
+            result = decoder.decode_multiview(multiview_inputs, args.output)
+        elif args.input_180:
             result = decoder.decode_fused(args.input, args.input_180, args.output)
         else:
             result = decoder.decode(args.input, args.output)
     except (RuntimeError, ValueError, FileNotFoundError) as exc:
         parser.error(str(exc))
 
-    if args.input_180:
+    if multiview_inputs is not None:
+        for angle, path in multiview_inputs.items():
+            print(f"Decoded {angle}-degree scan: {path}")
+        print(f"Output folder: {args.output}")
+        for estimated in estimated_transforms:
+            print(estimated.summary)
+            print(f"Fusion transform: {estimated.path}")
+        print(
+            "Four-view fused valid ratio: "
+            f"{result.report['fusion']['coverage']['fused_valid_ratio']:.3f}"
+        )
+        print(f"Height mode: {result.height.mode}; metric={result.height.metric}")
+    elif args.input_180:
         print(f"Decoded 0-degree scan: {args.input}")
         print(f"Decoded 180-degree scan: {args.input_180}")
         print(f"Output folder: {args.output}")
-        if estimated_transform is not None:
-            print(estimated_transform.summary)
-            print(f"Fusion transform: {estimated_transform.path}")
+        for estimated in estimated_transforms:
+            print(estimated.summary)
+            print(f"Fusion transform: {estimated.path}")
         print(
             "Fused valid ratio: "
             f"{result.report['fusion']['coverage']['fused_valid_ratio']:.3f}"
@@ -454,8 +550,17 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _require_hardware_capture(input_dir: Path) -> None:
-    audit = audit_capture_contract(input_dir)
+def _require_hardware_capture(
+    input_dir: Path,
+    *,
+    expected_angle: float | None = None,
+    stage_angle_tolerance_deg: float = 0.5,
+) -> None:
+    audit = audit_capture_contract(
+        input_dir,
+        expected_view_angle_deg=expected_angle,
+        stage_angle_tolerance_deg=stage_angle_tolerance_deg,
+    )
     if audit["status"] == "passed":
         return
     details = "\n- ".join(str(error) for error in audit["errors"])
@@ -469,6 +574,10 @@ def _prepare_fusion_registration(
     args: argparse.Namespace,
     config: DecodeConfig,
 ):
+    if args.fusion_registration == "precomputed":
+        if config.fusion_transform is None:
+            raise ValueError("precomputed registration requires --fusion-transform")
+        return None
     if args.fusion_registration == "rotation-180":
         return None
     if not args.input_180:
@@ -490,6 +599,8 @@ def _prepare_fusion_registration(
         aruco_ids=marker_ids,
         aruco_image=args.aruco_image,
         aruco_method=args.aruco_method,
+        aruco_marker_center_radius_mm=args.aruco_marker_center_radius_mm,
+        aruco_marker_black_square_mm=args.aruco_marker_black_square_mm,
         aruco_ransac_threshold_px=args.aruco_ransac_threshold_px,
         phase_correlation_image=args.phase_correlation_image,
         phase_correlation_min_response=args.phase_correlation_min_response,
@@ -497,6 +608,65 @@ def _prepare_fusion_registration(
     if estimated_transform is not None:
         config.fusion_transform = estimated_transform.path
     return estimated_transform
+
+
+def _prepare_multiview_registration(
+    args: argparse.Namespace,
+    config: DecodeConfig,
+    input_dirs: dict[int, Path],
+):
+    if args.fusion_registration == "precomputed":
+        missing = []
+        if config.fusion_transform_90 is None:
+            missing.append("--fusion-transform-90")
+        if config.fusion_transform is None:
+            missing.append("--fusion-transform")
+        if config.fusion_transform_270 is None:
+            missing.append("--fusion-transform-270")
+        if missing:
+            raise ValueError("precomputed four-direction registration requires " + ", ".join(missing))
+        return []
+    if args.fusion_registration != "aruco":
+        raise ValueError(
+            "four-direction automatic registration requires --fusion-registration aruco; "
+            "use precomputed with three angle-specific transforms otherwise"
+        )
+    if any(
+        path is not None
+        for path in (config.fusion_transform_90, config.fusion_transform, config.fusion_transform_270)
+    ):
+        raise ValueError(
+            "angle-specific fusion transforms cannot be combined with automatic ArUco registration"
+        )
+
+    marker_ids = parse_marker_ids(args.aruco_ids)
+    estimated = []
+    for angle in (90, 180, 270):
+        transform = estimate_and_save_view_transform(
+            "aruco",
+            input_dirs[0],
+            input_dirs[angle],
+            args.output,
+            source_angle_deg=angle,
+            fusion_center=config.fusion_center,
+            aruco_dictionary=args.aruco_dictionary,
+            aruco_ids=marker_ids,
+            aruco_image=args.aruco_image,
+            aruco_method=args.aruco_method,
+            aruco_marker_center_radius_mm=args.aruco_marker_center_radius_mm,
+            aruco_marker_black_square_mm=args.aruco_marker_black_square_mm,
+            aruco_ransac_threshold_px=args.aruco_ransac_threshold_px,
+        )
+        if transform is None:
+            raise ValueError(f"failed to estimate the {angle}-degree ArUco transform")
+        estimated.append(transform)
+        if angle == 90:
+            config.fusion_transform_90 = transform.path
+        elif angle == 180:
+            config.fusion_transform = transform.path
+        else:
+            config.fusion_transform_270 = transform.path
+    return estimated
 
 
 def _parse_crosstalk_matrix_arg(text: str):
