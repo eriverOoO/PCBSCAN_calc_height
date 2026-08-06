@@ -53,3 +53,20 @@ def test_reference_store_saves_all_four_cardinal_views(tmp_path: Path) -> None:
     assert store.is_four_view_available()
     assert np.allclose(np.load(store.phase_270_path), phase + 3)
     assert store.metadata()["view_angles_deg"] == [0, 90, 180, 270]
+
+
+def test_pair_metadata_does_not_reuse_stale_four_view_files(tmp_path: Path) -> None:
+    phase = np.indices((40, 50))[1].astype(np.float32)
+    report = validate_flat_stage(phase, np.ones_like(phase, dtype=bool))
+    store = ReferenceStore(tmp_path / "reference_replace")
+    angles = (0, 90, 180, 270)
+    store.save_multiview(
+        {angle: phase for angle in angles},
+        {angle: report for angle in angles},
+        {angle: tmp_path / f"raw{angle}" for angle in angles},
+    )
+
+    store.save(phase, phase, report, report, tmp_path / "new0", tmp_path / "new180")
+
+    assert store.is_available()
+    assert not store.is_four_view_available()

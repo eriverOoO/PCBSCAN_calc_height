@@ -196,7 +196,18 @@ class ReferenceStore:
         return self.root / "reference_metadata.json"
 
     def is_available(self, angles: tuple[int, ...] = (0, 180)) -> bool:
-        return all(self.phase_path(angle).is_file() for angle in angles) and self.metadata_path.is_file()
+        if not all(self.phase_path(angle).is_file() for angle in angles) or not self.metadata_path.is_file():
+            return False
+        try:
+            metadata = json.loads(self.metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        stored_angles = metadata.get("view_angles_deg", [0, 180])
+        if not isinstance(stored_angles, list):
+            return False
+        return {int(angle) % 360 for angle in angles}.issubset(
+            {int(angle) % 360 for angle in stored_angles}
+        )
 
     def is_four_view_available(self) -> bool:
         return self.is_available((0, 90, 180, 270))
