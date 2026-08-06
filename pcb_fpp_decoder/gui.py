@@ -31,12 +31,17 @@ from tkinter import (
 )
 
 from .decoder import DecodeConfig, PcbFppDecoder
-from .fusion_registration import estimate_and_save_fusion_transform
+from .fusion_registration import (
+    estimate_and_save_fusion_transform,
+    estimate_and_save_view_transform,
+)
 from .io import (
     COLOR_INPUT_MODES,
+    FOUR_DIRECTION_ANGLES,
     parse_crosstalk_matrix,
     resolve_decode_input_dir,
     resolve_fusion_scan_dirs,
+    resolve_multiview_scan_dirs,
 )
 from .reference_store import ReferenceStore, validate_flat_stage
 from .aruco_alignment import estimate_aruco_transform_from_images
@@ -435,7 +440,9 @@ class DecoderGui:
         self.root.minsize(760, 600)
         self._option_display_vars: list[StringVar] = []
         self.input_var = StringVar()
+        self.input_90_var = StringVar()
         self.input_180_var = StringVar()
+        self.input_270_var = StringVar()
         self.output_var = StringVar()
         # Ximea Mono8 captures retain reliable flat-stage geometry at this
         # conservative low-contrast profile.  The previous 20/0.05/0.05
@@ -458,9 +465,13 @@ class DecoderGui:
         self.reference_scan_var = StringVar()
         self.reference_phase_var = StringVar()
         self.reference_scan_0_var = StringVar()
+        self.reference_scan_90_var = StringVar()
         self.reference_scan_180_var = StringVar()
+        self.reference_scan_270_var = StringVar()
         self.reference_phase_0_var = StringVar()
+        self.reference_phase_90_var = StringVar()
         self.reference_phase_180_var = StringVar()
+        self.reference_phase_270_var = StringVar()
         calibration_path = default_metric_calibration_path()
         self.calibration_config_var = StringVar(
             value=str(calibration_path) if calibration_path is not None else ""
@@ -477,13 +488,15 @@ class DecoderGui:
         self.registration_transform_var = IntVar(value=0)
         self.aruco_ids_var = StringVar(value="0,1,2,3")
         self.aruco_dictionary_var = StringVar(value="DICT_4X4_50")
+        # The legacy two-image pre-calibration still uses direct homography.
+        # Four-direction decoding explicitly selects the stage-cross method.
         self.aruco_method_var = StringVar(value="homography")
         self.registration_image_var = StringVar(value="pattern_000.png")
         self.analysis_roi_var = StringVar(value="aruco")
         self.analysis_aruco_ids_var = StringVar(value="0,1,2,3")
         self.analysis_aruco_layout_var = StringVar(value="stage-cross")
         self.analysis_workspace_size_var = StringVar()
-        self.analysis_marker_radius_var = StringVar(value="42")
+        self.analysis_marker_radius_var = StringVar(value="25")
         self.analysis_stage_diameter_var = StringVar(value="105")
         self.pcb_size_var = StringVar(value="30,30")
         self.pcb_margin_var = StringVar(value="0")
@@ -501,7 +514,9 @@ class DecoderGui:
         self._stage_result_path: Path | None = None
         self._stage_result_status = self.stage_status_var.get()
         self.reference_input_0_var = StringVar()
+        self.reference_input_90_var = StringVar()
         self.reference_input_180_var = StringVar()
+        self.reference_input_270_var = StringVar()
         self.reference_status_var = StringVar()
         self.messages: queue.Queue[str] = queue.Queue()
         self._refresh_reference_status()
@@ -540,8 +555,8 @@ class DecoderGui:
         Label(
             outer,
             text=(
-                "촬영 순서: ① 빈 스테이지 ArUco 0° → ② 회전 후 180° → 기준 등록\n"
-                "③ PCB 메인 0° → ④ 회전 후 180° → 높이 계산 · 시각화"
+                "촬영 순서: 빈 스테이지와 PCB를 각각 0°/90°/180°/270°에서 촬영합니다.\n"
+                "각 방향은 4개 ArUco 마커의 stage-cross 좌표로 0° 프레임에 자동 정합됩니다."
             ),
             justify="left",
             anchor="w",
@@ -611,9 +626,21 @@ class DecoderGui:
         )
         self._folder_row(
             reference_admin,
+            "빈 스테이지 90° 스캔",
+            self.reference_input_90_var,
+            self._choose_reference_input_90,
+        )
+        self._folder_row(
+            reference_admin,
             "빈 스테이지 180° 스캔",
             self.reference_input_180_var,
             self._choose_reference_input_180,
+        )
+        self._folder_row(
+            reference_admin,
+            "빈 스테이지 270° 스캔",
+            self.reference_input_270_var,
+            self._choose_reference_input_270,
         )
         self.reference_button = Button(
             reference_admin,
@@ -627,9 +654,21 @@ class DecoderGui:
         self._folder_row(folders, "PCB 0° 스캔", self.input_var, self._choose_input)
         self._folder_row(
             folders,
+            "PCB 90° 스캔",
+            self.input_90_var,
+            self._choose_input_90,
+        )
+        self._folder_row(
+            folders,
             "PCB 180° 스캔",
             self.input_180_var,
             self._choose_input_180,
+        )
+        self._folder_row(
+            folders,
+            "PCB 270° 스캔",
+            self.input_270_var,
+            self._choose_input_270,
         )
         self._folder_row(folders, "결과 폴더", self.output_var, self._choose_output)
         self._file_row(
@@ -641,8 +680,8 @@ class DecoderGui:
         Label(
             folders,
             text=(
-                "저장된 0°/180° 기준면과 위 ArUco 정합 결과를 사용합니다. "
-                "기존 stage_precalibration.json도 자동으로 불러옵니다."
+                "4방향에서는 저장된 각도별 기준면과 r25 mm ArUco stage-cross 정합을 사용합니다. "
+                "0°/180°만 선택하면 기존 2방향 처리도 유지됩니다."
             ),
             justify="left",
             anchor="w",
@@ -741,12 +780,13 @@ class DecoderGui:
         metadata = self.reference_store.metadata()
         if metadata is None:
             self.reference_status_var.set(
-                "저장된 기준면이 없습니다. 빈 스테이지를 0°/180° 각각 촬영한 뒤 등록하세요."
+                "저장된 기준면이 없습니다. 빈 스테이지를 0°/90°/180°/270°에서 촬영한 뒤 등록하세요."
             )
             return
         created = str(metadata.get("created_at", "unknown"))
+        angles = metadata.get("view_angles_deg", [0, 180])
         self.reference_status_var.set(
-            f"저장된 기준면 사용 중 · 등록 시각: {created}\n"
+            f"저장된 기준면 사용 중 · 각도: {angles} · 등록 시각: {created}\n"
             f"저장 위치: {self.reference_store.root}"
         )
 
@@ -755,17 +795,37 @@ class DecoderGui:
         if folder:
             self.reference_input_0_var.set(folder)
 
+    def _choose_reference_input_90(self) -> None:
+        folder = filedialog.askdirectory(title="빈 스테이지 기준면 90° 스캔 폴더 선택")
+        if folder:
+            self.reference_input_90_var.set(folder)
+
     def _choose_reference_input_180(self) -> None:
         folder = filedialog.askdirectory(title="빈 스테이지 기준면 180° 스캔 폴더 선택")
         if folder:
             self.reference_input_180_var.set(folder)
 
+    def _choose_reference_input_270(self) -> None:
+        folder = filedialog.askdirectory(title="빈 스테이지 기준면 270° 스캔 폴더 선택")
+        if folder:
+            self.reference_input_270_var.set(folder)
+
     def _register_reference(self) -> None:
         try:
-            source_0 = Path(self.reference_input_0_var.get().strip())
-            source_180 = Path(self.reference_input_180_var.get().strip())
-            if not self.reference_input_0_var.get().strip() or not self.reference_input_180_var.get().strip():
+            source_texts = {
+                0: self.reference_input_0_var.get().strip(),
+                90: self.reference_input_90_var.get().strip(),
+                180: self.reference_input_180_var.get().strip(),
+                270: self.reference_input_270_var.get().strip(),
+            }
+            if not source_texts[0] or not source_texts[180]:
                 raise ValueError("기준면 0°와 180° 스캔 폴더를 모두 선택하세요.")
+            four_direction = bool(source_texts[90] or source_texts[270])
+            required_angles = FOUR_DIRECTION_ANGLES if four_direction else (0, 180)
+            missing = [angle for angle in required_angles if not source_texts[angle]]
+            if missing:
+                raise ValueError(f"4방향 기준면 등록에 누락된 각도: {missing}")
+            sources = {angle: Path(source_texts[angle]) for angle in required_angles}
             config = self._config_from_fields(use_saved_reference=False)
         except Exception as exc:
             messagebox.showerror("기준면 등록 오류", _format_exception_for_user(exc))
@@ -773,45 +833,61 @@ class DecoderGui:
         self.reference_button.config(state="disabled")
         threading.Thread(
             target=self._reference_worker,
-            args=(source_0, source_180, config),
+            args=(sources, config),
             daemon=True,
         ).start()
 
-    def _reference_worker(self, source_0: Path, source_180: Path, config: DecodeConfig) -> None:
+    def _reference_worker(self, sources: dict[int, Path], config: DecodeConfig) -> None:
         try:
-            self.messages.put("기준면 0°/180°를 디코딩하고 평탄도를 검증합니다.\n")
+            angles = tuple(sorted(sources))
+            self.messages.put(f"기준면 {angles}°를 디코딩하고 평탄도를 검증합니다.\n")
             reference_config = replace(
                 config,
                 height_mode="relative",
                 reference_phase=None,
                 reference_scan=None,
                 reference_phase_0=None,
+                reference_phase_90=None,
                 reference_phase_180=None,
+                reference_phase_270=None,
                 reference_scan_0=None,
+                reference_scan_90=None,
                 reference_scan_180=None,
+                reference_scan_270=None,
                 analysis_roi_mode="none",
                 output_profile="compact",
             )
             decoder = PcbFppDecoder(reference_config)
-            folder_0 = resolve_decode_input_dir(source_0, preferred_angle=0)
-            folder_180 = resolve_decode_input_dir(source_180, preferred_angle=180)
-            result_0 = decoder._decode_in_memory(folder_0, view_angle=0)
-            result_180 = decoder._decode_in_memory(folder_180, view_angle=180)
-            report_0 = validate_flat_stage(result_0.absolute.absolute_phase, result_0.absolute.combined_mask)
-            report_180 = validate_flat_stage(result_180.absolute.absolute_phase, result_180.absolute.combined_mask)
-            if not report_0.valid or not report_180.valid:
-                raise ValueError(
-                    "기준면 검증 실패: "
-                    f"0°={report_0.reason} (유효 {report_0.valid_ratio:.1%}, P95 {report_0.p95_plane_residual:.3f}); "
-                    f"180°={report_180.reason} (유효 {report_180.valid_ratio:.1%}, P95 {report_180.p95_plane_residual:.3f})"
+            folders = {
+                angle: resolve_decode_input_dir(source, preferred_angle=angle)
+                for angle, source in sources.items()
+            }
+            results = {
+                angle: decoder._decode_in_memory(folder, view_angle=angle)
+                for angle, folder in folders.items()
+            }
+            reports = {
+                angle: validate_flat_stage(
+                    result.absolute.absolute_phase,
+                    result.absolute.combined_mask,
                 )
-            self.reference_store.save(
-                result_0.absolute.absolute_phase,
-                result_180.absolute.absolute_phase,
-                report_0,
-                report_180,
-                folder_0,
-                folder_180,
+                for angle, result in results.items()
+            }
+            invalid = [
+                f"{angle}°={report.reason} (유효 {report.valid_ratio:.1%}, "
+                f"P95 {report.p95_plane_residual:.3f})"
+                for angle, report in reports.items()
+                if not report.valid
+            ]
+            if invalid:
+                raise ValueError("기준면 검증 실패: " + "; ".join(invalid))
+            self.reference_store.save_multiview(
+                {
+                    angle: result.absolute.absolute_phase
+                    for angle, result in results.items()
+                },
+                reports,
+                folders,
             )
             self.messages.put(
                 "기준면 검증 통과 및 영구 저장 완료. 이후 일반 스캔에 자동 적용됩니다.\n"
@@ -928,12 +1004,22 @@ class DecoderGui:
         folder = filedialog.askdirectory(title="스캔 폴더 선택")
         if folder:
             selected = Path(folder)
+            multiview = resolve_multiview_scan_dirs(selected)
             input_0, input_180 = resolve_fusion_scan_dirs(selected)
             self.input_var.set(str(input_0))
+            self.input_90_var.set(str(multiview[90]) if 90 in multiview else "")
             self.input_180_var.set(str(input_180) if input_180 is not None else "")
+            self.input_270_var.set(str(multiview[270]) if 270 in multiview else "")
             scan_root = input_0.parent if input_0.name.lower().startswith(("angle_", "deg_")) else input_0
             stage_precalibration = scan_root / "stage_precalibration.json"
-            if stage_precalibration.is_file():
+            if all(angle in multiview for angle in FOUR_DIRECTION_ANGLES):
+                self.fusion_transform_var.set("")
+                self.registration_transform_var.set(0)
+                self.registration_rotation_var.set(0)
+                self.registration_aruco_var.set(1)
+                self.registration_phase_var.set(0)
+                self.analysis_roi_var.set("aruco")
+            elif stage_precalibration.is_file():
                 self.stage_transform_output_var.set(str(stage_precalibration))
                 self.stage_status_var.set("기존 ArUco 정합 결과를 불러왔습니다.")
                 self.fusion_transform_var.set(str(stage_precalibration))
@@ -948,10 +1034,20 @@ class DecoderGui:
             if not output_text or is_default_scan_output_dir(Path(output_text)):
                 self.output_var.set(str(suggested_output_dir(scan_root)))
 
+    def _choose_input_90(self) -> None:
+        folder = filedialog.askdirectory(title="90도 스캔 폴더 선택")
+        if folder:
+            self.input_90_var.set(folder)
+
     def _choose_input_180(self) -> None:
         folder = filedialog.askdirectory(title="180도 스캔 폴더 선택")
         if folder:
             self.input_180_var.set(folder)
+
+    def _choose_input_270(self) -> None:
+        folder = filedialog.askdirectory(title="270도 스캔 폴더 선택")
+        if folder:
+            self.input_270_var.set(folder)
 
     def _choose_output(self) -> None:
         folder = filedialog.askdirectory(title="출력 폴더 선택")
@@ -1032,23 +1128,46 @@ class DecoderGui:
             if not output_text:
                 raise ValueError("출력 폴더를 선택해 주세요.")
 
-            input_dir, auto_input_180_dir = resolve_fusion_scan_dirs(Path(input_text))
-            selected_input_180 = self._optional_path(self.input_180_var)
-            input_180_dir = (
-                resolve_decode_input_dir(selected_input_180, preferred_angle=180)
-                if selected_input_180 is not None
-                else auto_input_180_dir
-            )
+            auto_dirs = resolve_multiview_scan_dirs(Path(input_text))
+            input_dir = resolve_decode_input_dir(Path(input_text), preferred_angle=0)
+            input_dirs: dict[int, Path] = {0: input_dir}
+            angle_vars = {
+                90: self.input_90_var,
+                180: self.input_180_var,
+                270: self.input_270_var,
+            }
+            for angle, var in angle_vars.items():
+                selected = self._optional_path(var)
+                if selected is not None:
+                    input_dirs[angle] = resolve_decode_input_dir(selected, preferred_angle=angle)
+                elif angle in auto_dirs:
+                    input_dirs[angle] = auto_dirs[angle]
+            four_direction = 90 in input_dirs or 270 in input_dirs
+            if four_direction:
+                missing = [angle for angle in FOUR_DIRECTION_ANGLES if angle not in input_dirs]
+                if missing:
+                    raise ValueError(f"4방향 촬영에 누락된 스캔 각도: {missing}")
+                required_reference_angles = FOUR_DIRECTION_ANGLES
+            else:
+                required_reference_angles = (0, 180)
+            input_180_dir = input_dirs.get(180)
             output_dir = Path(output_text)
             if not output_matches_input_scan(output_dir, input_dir):
                 raise ValueError(
                     "Output folder already contains results for a different input scan. "
                     "Choose the output folder matching the selected scan ID."
                 )
-            config = self._config_from_fields()
+            config = self._config_from_fields(
+                required_reference_angles=required_reference_angles,
+            )
             registration = self._registration_from_fields()
             stage_precalibration = input_dir.parent / "stage_precalibration.json"
-            if input_180_dir is not None and stage_precalibration.is_file():
+            if four_direction:
+                if registration.mode != "aruco":
+                    raise ValueError("4방향 자동 정합은 ArUco 방식을 선택해야 합니다.")
+                if config.fusion_transform is not None:
+                    raise ValueError("기존 180° 변환 파일은 4방향 자동 ArUco 정합과 함께 사용할 수 없습니다.")
+            elif input_180_dir is not None and stage_precalibration.is_file():
                 if config.fusion_transform is None:
                     config.fusion_transform = stage_precalibration
                     registration = replace(registration, mode="rotation-180")
@@ -1061,26 +1180,41 @@ class DecoderGui:
         self.run_button.config(state="disabled")
         thread = threading.Thread(
             target=self._decode_worker,
-            args=(input_dir, input_180_dir, output_dir, config, registration),
+            args=(input_dirs, output_dir, config, registration),
             daemon=True,
         )
         thread.start()
 
-    def _config_from_fields(self, *, use_saved_reference: bool = True) -> DecodeConfig:
+    def _config_from_fields(
+        self,
+        *,
+        use_saved_reference: bool = True,
+        required_reference_angles: tuple[int, ...] = (0, 180),
+    ) -> DecodeConfig:
         height_mode = self.height_mode_var.get()
         reference_scan = None
         reference_phase = None
         reference_scan_0 = None
+        reference_scan_90 = None
         reference_scan_180 = None
+        reference_scan_270 = None
         reference_phase_0 = None
+        reference_phase_90 = None
         reference_phase_180 = None
+        reference_phase_270 = None
         if use_saved_reference:
-            if not self.reference_store.is_available():
+            if not self.reference_store.is_available(required_reference_angles):
                 raise ValueError(
-                    "저장된 기준면이 없습니다. GUI 2단계에서 빈 스테이지 0°/180° 기준면을 등록하세요."
+                    f"저장된 {required_reference_angles}° 기준면이 없습니다. "
+                    "GUI 2단계에서 해당 각도의 빈 스테이지 기준면을 등록하세요."
                 )
             reference_phase_0 = self.reference_store.phase_0_path
-            reference_phase_180 = self.reference_store.phase_180_path
+            if 90 in required_reference_angles:
+                reference_phase_90 = self.reference_store.phase_90_path
+            if 180 in required_reference_angles:
+                reference_phase_180 = self.reference_store.phase_180_path
+            if 270 in required_reference_angles:
+                reference_phase_270 = self.reference_store.phase_270_path
         calibration_config = self._optional_path(self.calibration_config_var)
         fusion_transform = self._optional_path(self.fusion_transform_var)
         fusion_center = self._parse_fusion_center()
@@ -1128,9 +1262,13 @@ class DecoderGui:
             reference_scan=reference_scan,
             reference_phase=reference_phase,
             reference_scan_0=reference_scan_0,
+            reference_scan_90=reference_scan_90,
             reference_scan_180=reference_scan_180,
+            reference_scan_270=reference_scan_270,
             reference_phase_0=reference_phase_0,
+            reference_phase_90=reference_phase_90,
             reference_phase_180=reference_phase_180,
+            reference_phase_270=reference_phase_270,
             calibration_config=calibration_config,
             height_sign=_parse_float("높이 부호", self.height_sign_var.get()),
             fusion_mode=self.fusion_mode_var.get(),
@@ -1228,20 +1366,58 @@ class DecoderGui:
 
     def _decode_worker(
         self,
-        input_dir: Path,
-        input_180_dir: Path | None,
+        input_dirs: dict[int, Path],
         output_dir: Path,
         config: DecodeConfig,
         registration: FusionRegistrationSettings,
     ) -> None:
+        input_dir = input_dirs[0]
+        input_180_dir = input_dirs.get(180)
         self.messages.put(f"디코딩 중: {input_dir}\n")
-        if input_180_dir is not None:
+        four_direction = all(angle in input_dirs for angle in FOUR_DIRECTION_ANGLES)
+        if four_direction:
+            self.messages.put("0°/90°/180°/270° 스캔 정합 및 합성 중\n")
+        elif input_180_dir is not None:
             self.messages.put(f"180도 스캔 합성 중: {input_180_dir}\n")
         self.messages.put(f"높이 모드: {_option_label(config.height_mode)}\n")
         if config.height_mode != "relative":
             self.messages.put("기준 위상 차감: 사용\n")
         try:
-            if input_180_dir is None:
+            if four_direction:
+                estimated_transforms = []
+                for angle in (90, 180, 270):
+                    estimated = estimate_and_save_view_transform(
+                        "aruco",
+                        input_dir,
+                        input_dirs[angle],
+                        output_dir,
+                        source_angle_deg=angle,
+                        fusion_center=config.fusion_center,
+                        aruco_dictionary=registration.aruco_dictionary,
+                        aruco_ids=registration.aruco_ids,
+                        aruco_image=registration.image_name,
+                        aruco_method="stage-cross",
+                        aruco_marker_center_radius_mm=25.0,
+                        aruco_marker_black_square_mm=11.4,
+                    )
+                    if estimated is None:
+                        raise ValueError(f"{angle}° ArUco 변환을 계산하지 못했습니다.")
+                    estimated_transforms.append(estimated)
+                    if angle == 90:
+                        config.fusion_transform_90 = estimated.path
+                    elif angle == 180:
+                        config.fusion_transform = estimated.path
+                    else:
+                        config.fusion_transform_270 = estimated.path
+                for estimated in estimated_transforms:
+                    self.messages.put(
+                        f"{_format_estimated_transform_summary(estimated)}\n"
+                        f"합성 변환: {estimated.path}\n"
+                    )
+                result = PcbFppDecoder(config).decode_multiview(input_dirs, output_dir)
+                ratio = result.report["fusion"]["coverage"]["fused_valid_ratio"]
+                ratio_label = "4방향 합성 유효 비율"
+            elif input_180_dir is None:
                 result = PcbFppDecoder(config).decode(input_dir, output_dir)
                 ratio = result.report["mask_coverage"]["combined_mask_ratio"]
                 ratio_label = "통합 유효 비율"
