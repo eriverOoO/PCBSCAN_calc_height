@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from .aruco_alignment import ARUCO_DICTIONARIES, parse_marker_ids
+from .capture_contract import audit_capture_contract
 from .decoder import DecodeConfig, OUTPUT_PROFILES, PcbFppDecoder
 from .fusion_registration import (
     FUSION_REGISTRATION_CHOICES,
@@ -50,6 +51,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--output", required=True, type=Path, help="Output processed folder")
+    parser.add_argument(
+        "--require-hardware-capture",
+        action="store_true",
+        help=(
+            "Reject input unless scan_log.json proves a locked hardware-triggered "
+            "pattern/exposure sequence and fixed linear Mono camera settings."
+        ),
+    )
     parser.add_argument("--projector-width", type=int, default=1280)
     parser.add_argument("--gray-bits", type=int, default=8)
     parser.add_argument(
@@ -402,6 +411,14 @@ def main(argv: list[str] | None = None) -> int:
             )
         args.input_180 = candidate
 
+    if args.require_hardware_capture:
+        try:
+            _require_hardware_capture(args.input)
+            if args.input_180:
+                _require_hardware_capture(args.input_180)
+        except ValueError as exc:
+            parser.error(str(exc))
+
     config = config_from_args(args)
     try:
         estimated_transform = _prepare_fusion_registration(args, config) if args.input_180 else None
@@ -435,6 +452,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Height mode: {result.height.mode}; metric={result.height.metric}")
     print(f"Capture diagnosis: {args.output / 'capture_diagnosis.txt'}")
     return 0
+
+
+def _require_hardware_capture(input_dir: Path) -> None:
+    audit = audit_capture_contract(input_dir)
+    if audit["status"] == "passed":
+        return
+    details = "\n- ".join(str(error) for error in audit["errors"])
+    raise ValueError(
+        "--require-hardware-capture rejected the scan. "
+        "Run scripts/verify_hardware_capture.py for the JSON audit.\n- " + details
+    )
 
 
 def _prepare_fusion_registration(

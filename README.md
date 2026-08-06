@@ -2,6 +2,45 @@
 
 이 프로젝트는 PRO4500 또는 LightCrafter 4500 계열 구조광 시스템으로 촬영한 PCB 패턴 이미지를 전처리하고, Gray code와 4-step phase shifting을 이용해 위상 및 높이 지도를 복원하는 Python 도구입니다.
 
+## 하드웨어 트리거 촬영 계약
+
+정밀 계측 모드에서는 프로젝터의 pattern advance와 카메라 exposure를 같은 하드웨어 trigger line으로 묶어야 합니다. 이 저장소에는 카메라/프로젝터 SDK 제어기가 포함되지 않으므로, 제어기는 촬영 후 각 view의 `scan_log.json`에 아래 증거를 기록해야 합니다. `--require-hardware-capture`를 주면 이 증거가 없거나 자동 노출/감마가 켜진 촬영은 디코딩하지 않습니다.
+
+```json
+{
+  "capture_contract_version": 1,
+  "status": "ok",
+  "capture_protocol": {
+    "sequence_locked": true,
+    "projector_pattern_advance": "hardware_trigger",
+    "camera_exposure": "hardware_trigger",
+    "trigger_source": "PRO4500.TRIG_OUT -> XIMEA.GPI_1"
+  },
+  "settings": {
+    "auto_exposure": false,
+    "auto_gain": false,
+    "auto_white_balance": false,
+    "gamma_enabled": false,
+    "output_linear": true,
+    "exposure_mode": "manual",
+    "gain_mode": "manual",
+    "focus_mode": "manual",
+    "pixel_format": "Mono8"
+  },
+  "rows": [{"pattern_id": 0, "filename": "pattern_000.png", "sequence_index": 0, "trigger_id": "trigger-000"}]
+}
+```
+
+`rows`에는 사용한 모든 필수 패턴(최소 0..13)을 한 번씩, 순서대로 기록해야 합니다. `trigger_id`는 카메라가 실제 수신한 exposure event의 식별자여야 합니다.
+
+```powershell
+python scripts\verify_hardware_capture.py --input captures\scan_xxx\deg_0
+python scripts\decode_scan.py --input captures\scan_xxx\deg_0 --output processed\scan_xxx\deg_0 --require-hardware-capture
+python scripts\review_scan_results.py --capture captures\scan_xxx\deg_0 --processed processed\scan_xxx\deg_0
+```
+
+마지막 명령은 `scan_review.json`을 생성합니다. 이후 촬영 폴더와 처리 폴더(또는 이 파일)를 공유하면 trigger/설정 증거, 디코더의 유효 픽셀 비율, capture diagnosis를 함께 재검토할 수 있습니다.
+
 기본 입력은 `captures` 폴더 아래의 촬영 세트이고, 처리 결과는 별도의 `processed` 폴더에 저장하는 구성을 권장합니다.
 
 ## 처음 사용하는 사람을 위한 사용법

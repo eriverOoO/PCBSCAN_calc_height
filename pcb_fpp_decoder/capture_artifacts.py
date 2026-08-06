@@ -14,6 +14,7 @@ _VIEW_SIDECARS = (
     "scan_log.json",
     "quality_report.json",
     "hdr_merge_report.json",
+    "hardware_capture_report.json",
     "blue_channel_histograms.png",
 )
 _SCAN_ROOT_SIDECARS = ("stage_precalibration.json",)
