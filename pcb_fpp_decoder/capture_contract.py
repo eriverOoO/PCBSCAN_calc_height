@@ -9,6 +9,7 @@ that it did.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -44,6 +45,9 @@ def load_capture_log(input_dir: Path) -> dict[str, Any] | None:
 def audit_capture_contract(
     input_dir: Path,
     required_pattern_ids: Iterable[int] = range(14),
+    *,
+    expected_view_angle_deg: float | None = None,
+    stage_angle_tolerance_deg: float = 0.5,
 ) -> dict[str, Any]:
     """Validate controller evidence without pretending to inspect GPIO state.
 
@@ -78,12 +82,14 @@ def audit_capture_contract(
     protocol = _mapping(data.get("capture_protocol"))
     settings = _mapping(data.get("settings"))
     camera = _mapping(data.get("camera"))
+    stage = _mapping(data.get("stage"))
     report["evidence"] = {
         "scan_id": data.get("scan_id"),
         "status": data.get("status"),
         "capture_protocol": protocol,
         "camera": camera,
         "settings": settings,
+        "stage": stage,
     }
 
     if data.get("status") != "ok":
@@ -102,6 +108,13 @@ def audit_capture_contract(
     if not isinstance(protocol.get("trigger_source"), str) or not protocol["trigger_source"].strip():
         errors.append("capture_protocol.trigger_source must identify the shared trigger line.")
     _check_camera_settings(settings, camera, errors, warnings)
+    if expected_view_angle_deg is not None:
+        _check_stage_evidence(
+            stage,
+            expected_view_angle_deg=float(expected_view_angle_deg),
+            tolerance_deg=float(stage_angle_tolerance_deg),
+            errors=errors,
+        )
 
     entries = _flatten_pattern_entries(data)
     by_id: dict[int, list[dict[str, Any]]] = {}
@@ -160,6 +173,57 @@ def audit_capture_contract(
     if not errors:
         report["status"] = "passed"
     return report
+
+
+def _check_stage_evidence(
+    stage: dict[str, Any],
+    *,
+    expected_view_angle_deg: float,
+    tolerance_deg: float,
+    errors: list[str],
+) -> None:
+    if tolerance_deg < 0:
+        errors.append("stage angle tolerance must be non-negative.")
+        return
+    if stage.get("settled") is not True:
+        errors.append("stage.settled must be true before the pattern burst starts.")
+    commanded = _finite_number(stage.get("commanded_angle_deg"))
+    actual = _finite_number(stage.get("actual_angle_deg"))
+    if actual is None:
+        actual = _finite_number(stage.get("measured_angle_deg"))
+    if commanded is None:
+        errors.append("stage.commanded_angle_deg is required for a four-direction capture.")
+    elif _angular_distance_deg(commanded, expected_view_angle_deg) > tolerance_deg:
+        errors.append(
+            "stage.commanded_angle_deg does not match the view folder: "
+            f"expected {expected_view_angle_deg:g}, got {commanded:g}."
+        )
+    if actual is None:
+        errors.append(
+            "stage.actual_angle_deg (or measured_angle_deg) is required for position correction."
+        )
+    elif _angular_distance_deg(actual, expected_view_angle_deg) > tolerance_deg:
+        errors.append(
+            f"stage actual angle differs from {expected_view_angle_deg:g} deg by more than "
+            f"{tolerance_deg:g} deg; got {actual:g}."
+        )
+    position_id = stage.get("position_id")
+    if not isinstance(position_id, str) or not position_id.strip():
+        errors.append("stage.position_id must identify the captured stop position.")
+
+
+def _finite_number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _angular_distance_deg(first: float, second: float) -> float:
+    return abs((float(first) - float(second) + 180.0) % 360.0 - 180.0)
 
 
 def write_capture_contract_report(input_dir: Path, output_path: Path) -> dict[str, Any]:

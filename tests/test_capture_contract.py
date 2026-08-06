@@ -5,8 +5,8 @@ from pcb_fpp_decoder.capture_contract import audit_capture_contract
 from pcb_fpp_decoder.cli import main as cli_main
 
 
-def _strict_log() -> dict:
-    return {
+def _strict_log(angle: int | None = None) -> dict:
+    payload = {
         "capture_contract_version": 1,
         "scan_id": "strict-test",
         "status": "ok",
@@ -37,6 +37,14 @@ def _strict_log() -> dict:
             for pattern_id in range(14)
         ],
     }
+    if angle is not None:
+        payload["stage"] = {
+            "position_id": f"deg_{angle}",
+            "commanded_angle_deg": float(angle),
+            "actual_angle_deg": float(angle) + 0.08,
+            "settled": True,
+        }
+    return payload
 
 
 def test_strict_hardware_capture_contract_accepts_complete_evidence(tmp_path: Path):
@@ -80,3 +88,29 @@ def test_cli_strict_mode_rejects_capture_without_contract(tmp_path: Path):
         assert exc.code == 2
     else:
         raise AssertionError("strict CLI mode should reject an unproven capture")
+
+
+def test_four_direction_contract_accepts_settled_stage_angle(tmp_path: Path):
+    (tmp_path / "scan_log.json").write_text(json.dumps(_strict_log(90)), encoding="utf-8")
+
+    report = audit_capture_contract(tmp_path, expected_view_angle_deg=90)
+
+    assert report["status"] == "passed"
+    assert report["evidence"]["stage"]["position_id"] == "deg_90"
+
+
+def test_four_direction_contract_rejects_wrong_or_unsettled_angle(tmp_path: Path):
+    log = _strict_log(90)
+    log["stage"]["actual_angle_deg"] = 88.9
+    log["stage"]["settled"] = False
+    (tmp_path / "scan_log.json").write_text(json.dumps(log), encoding="utf-8")
+
+    report = audit_capture_contract(
+        tmp_path,
+        expected_view_angle_deg=90,
+        stage_angle_tolerance_deg=0.5,
+    )
+
+    assert report["status"] == "rejected"
+    assert any("settled" in error for error in report["errors"])
+    assert any("actual angle" in error for error in report["errors"])

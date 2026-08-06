@@ -12,6 +12,7 @@ from pcb_fpp_decoder.io import (
     has_decode_pattern_files,
     load_pattern_set,
     resolve_fusion_scan_dirs,
+    resolve_multiview_scan_dirs,
     rgb_to_intensity,
 )
 
@@ -362,6 +363,17 @@ def test_resolve_fusion_scan_dirs_finds_both_angles_from_scan_root(tmp_path):
 
     assert resolved_0 == angle_0.resolve()
     assert resolved_180 == angle_180.resolve()
+
+
+def test_resolve_multiview_scan_dirs_finds_four_cardinal_angles(tmp_path):
+    scan_root = tmp_path / "captures" / "scan_four"
+    expected = {}
+    for angle in (0, 90, 180, 270):
+        folder = scan_root / f"deg_{angle}"
+        _write_synthetic_scan(folder)
+        expected[angle] = folder.resolve()
+
+    assert resolve_multiview_scan_dirs(scan_root) == expected
 
 
 def test_cli_full_output_profile_keeps_point_cloud_artifacts(tmp_path):

@@ -414,6 +414,34 @@ def resolve_fusion_scan_dirs(scan_folder: Path) -> tuple[Path, Path | None]:
     return input_0, input_180
 
 
+FOUR_DIRECTION_ANGLES = (0, 90, 180, 270)
+
+
+def resolve_multiview_scan_dirs(
+    scan_folder: Path,
+    angles: Sequence[int] = FOUR_DIRECTION_ANGLES,
+) -> dict[int, Path]:
+    """Resolve every decoder-ready angle folder below one scan root.
+
+    The returned mapping only contains angles with a complete minimum pattern
+    set.  A four-direction caller can report all missing views by comparing the
+    keys with ``FOUR_DIRECTION_ANGLES``.
+    """
+    selected = Path(scan_folder).expanduser().resolve()
+    is_angle_folder = re.fullmatch(r"(?:angle|deg)_\d{1,3}", selected.name, re.IGNORECASE)
+    scan_root = selected.parent if is_angle_folder and has_decode_pattern_files(selected) else selected
+
+    resolved: dict[int, Path] = {}
+    for angle in angles:
+        normalized_angle = int(angle) % 360
+        candidate = resolve_decode_input_dir(scan_root, preferred_angle=normalized_angle)
+        if has_decode_pattern_files(candidate):
+            resolved[normalized_angle] = candidate
+    if 0 not in resolved and has_decode_pattern_files(selected):
+        resolved[0] = selected
+    return resolved
+
+
 def _angle_folder_candidates(root: Path, angle: int) -> list[Path]:
     return [
         root / f"angle_{angle:03d}",
