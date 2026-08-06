@@ -717,3 +717,44 @@ def test_fused_decode_preserves_sidecars_per_view(tmp_path):
     manifest = json.loads((logs / "manifest.json").read_text(encoding="utf-8"))
     assert set(manifest["views"]) == {"deg_0", "deg_180"}
     assert result.report["capture_artifacts"]["manifest"] == "capture_logs/manifest.json"
+
+
+def test_four_direction_decode_aligns_and_fuses_all_cardinal_views(tmp_path):
+    scan_root = tmp_path / "captures" / "scan_four_fused"
+    output_dir = tmp_path / "processed" / "scan_four_fused"
+    inputs = {}
+    for angle in (0, 90, 180, 270):
+        folder = scan_root / f"deg_{angle}"
+        _write_synthetic_scan(folder)
+        (folder / "quality_report.json").write_text(
+            json.dumps({"angle": angle}),
+            encoding="utf-8",
+        )
+        inputs[angle] = folder
+
+    identity = tmp_path / "identity_transform.json"
+    identity.write_text(
+        json.dumps({"matrix": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]}),
+        encoding="utf-8",
+    )
+    config = DecodeConfig(
+        median_filter=0,
+        fusion_transform=identity,
+        fusion_transform_90=identity,
+        fusion_transform_270=identity,
+        output_profile="compact",
+    )
+
+    result = PcbFppDecoder(config).decode_multiview(inputs, output_dir)
+
+    assert set(result.views) == {0, 90, 180, 270}
+    assert np.count_nonzero(result.source_map == 15) > 0
+    assert result.report["fusion"]["view_angles_deg"] == [0, 90, 180, 270]
+    assert result.report["fusion"]["coverage"]["four_view_overlap_ratio"] > 0.95
+    assert (output_dir / "height" / "height_fused.npy").is_file()
+    assert (output_dir / "masks" / "source_deg_90.png").is_file()
+    assert (output_dir / "views" / "deg_270" / "decode_report.json").is_file()
+    manifest = json.loads(
+        (output_dir / "capture_logs" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert set(manifest["views"]) == {"deg_0", "deg_90", "deg_180", "deg_270"}

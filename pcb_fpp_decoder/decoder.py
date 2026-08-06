@@ -93,9 +93,13 @@ class DecodeConfig:
     reference_phase: Path | None = None
     reference_scan: Path | None = None
     reference_phase_0: Path | None = None
+    reference_phase_90: Path | None = None
     reference_phase_180: Path | None = None
+    reference_phase_270: Path | None = None
     reference_scan_0: Path | None = None
+    reference_scan_90: Path | None = None
     reference_scan_180: Path | None = None
+    reference_scan_270: Path | None = None
     calibration_config: Path | None = None
     height_sign: float = 1.0
     fusion_mode: str = "modulation-weighted"
@@ -103,6 +107,8 @@ class DecodeConfig:
     fusion_inconsistent_policy: str = "higher-confidence"
     fusion_center: tuple[float, float] | None = None
     fusion_transform: Path | None = None
+    fusion_transform_90: Path | None = None
+    fusion_transform_270: Path | None = None
     analysis_roi_mode: str = "none"
     analysis_aruco_dictionary: str = "DICT_4X4_50"
     analysis_aruco_ids: tuple[int, ...] = (0, 1, 2, 3)
@@ -208,6 +214,23 @@ class FusionResult:
     fusion_rejection_mask: np.ndarray
     transform_matrix: np.ndarray
     transform_kind: str
+    report: dict[str, Any]
+
+
+@dataclass
+class MultiViewFusionResult:
+    views: dict[int, DecodeResult]
+    height: HeightResult
+    confidence: np.ndarray
+    source_map: np.ndarray
+    aligned_heights: dict[int, np.ndarray]
+    aligned_masks: dict[int, np.ndarray]
+    aligned_confidences: dict[int, np.ndarray]
+    aligned_cycle_slips: dict[int, np.ndarray]
+    cycle_slip_mask: np.ndarray
+    fusion_rejection_mask: np.ndarray
+    transform_matrices: dict[int, np.ndarray]
+    transform_kinds: dict[int, str]
     report: dict[str, Any]
 
 
@@ -716,6 +739,148 @@ class PcbFppDecoder:
         self.save_fusion_outputs(fusion, output_dir)
         return fusion
 
+    def fuse_multiview_results(
+        self,
+        views: dict[int, DecodeResult],
+    ) -> MultiViewFusionResult:
+        normalized = {int(angle) % 360: result for angle, result in views.items()}
+        required = (0, 90, 180, 270)
+        missing = [angle for angle in required if angle not in normalized]
+        if missing:
+            raise ValueError(f"four-direction fusion is missing views: {missing}")
+        ordered_views = {angle: normalized[angle] for angle in required}
+        target = ordered_views[0]
+        target_shape = target.patterns.shape
+
+        aligned_heights: dict[int, np.ndarray] = {}
+        aligned_masks: dict[int, np.ndarray] = {}
+        aligned_confidences: dict[int, np.ndarray] = {}
+        aligned_cycle_slips: dict[int, np.ndarray] = {}
+        matrices: dict[int, np.ndarray] = {}
+        kinds: dict[int, str] = {}
+        for angle, result in ordered_views.items():
+            height = result.height.height.astype(np.float32)
+            mask = result.height.mask & np.isfinite(height)
+            confidence = _height_confidence(result)
+            if angle == 0:
+                matrix = np.asarray([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+                kind = "affine"
+                aligned_height = height
+                aligned_mask = mask
+                aligned_confidence = confidence
+                aligned_cycle_slip = result.absolute.cycle_slip_mask.astype(bool)
+            else:
+                matrix, kind = self._fusion_transform_for_angle(
+                    angle,
+                    target_shape,
+                    result.patterns.shape,
+                )
+                aligned_height, aligned_mask = _warp_float_with_mask(
+                    height,
+                    mask,
+                    target_shape,
+                    matrix,
+                    kind,
+                )
+                aligned_confidence, _ = _warp_float_with_mask(
+                    confidence,
+                    mask,
+                    target_shape,
+                    matrix,
+                    kind,
+                )
+                cycle_float, _ = _warp_float_with_mask(
+                    result.absolute.cycle_slip_mask.astype(np.float32),
+                    np.ones(result.patterns.shape, dtype=bool),
+                    target_shape,
+                    matrix,
+                    kind,
+                )
+                aligned_cycle_slip = cycle_float > 0.5
+            aligned_heights[angle] = aligned_height
+            aligned_masks[angle] = aligned_mask
+            aligned_confidences[angle] = aligned_confidence
+            aligned_cycle_slips[angle] = aligned_cycle_slip
+            matrices[angle] = matrix
+            kinds[angle] = kind
+
+        metric = all(result.height.metric for result in ordered_views.values())
+        max_difference = self.config.fusion_max_height_difference_mm if metric else None
+        fused_height, fused_mask, source_map, confidence, rejection = _fuse_multiview_height_maps(
+            aligned_heights,
+            aligned_masks,
+            aligned_confidences,
+            aligned_cycle_slips,
+            mode=self.config.fusion_mode,
+            epsilon=self.config.epsilon,
+            max_difference=max_difference,
+            inconsistent_policy=self.config.fusion_inconsistent_policy,
+        )
+        cycle_slip_mask = np.zeros(target_shape, dtype=bool)
+        for mask in aligned_cycle_slips.values():
+            cycle_slip_mask |= mask
+        units = {result.height.units for result in ordered_views.values()}
+        modes = {result.height.mode for result in ordered_views.values()}
+        height_result = HeightResult(
+            height=fused_height,
+            mask=fused_mask,
+            mode=f"fused-four-{next(iter(modes))}" if len(modes) == 1 else "fused-four-mixed",
+            metric=metric,
+            filename="height_mm.npy" if metric else "height_fused.npy",
+            message=(
+                "0/90/180/270 degree scans fused in the zero-degree stage frame; "
+                f"fusion mode={self.config.fusion_mode}"
+            ),
+            units=next(iter(units)) if len(units) == 1 else "mixed",
+            stats=_array_stats(fused_height, fused_mask),
+            reference_used=all(result.height.reference_used for result in ordered_views.values()),
+            calibration_parameters=target.height.calibration_parameters,
+        )
+        report = self._build_multiview_fusion_report(
+            ordered_views,
+            height_result,
+            source_map,
+            matrices,
+            kinds,
+            cycle_slip_mask,
+            rejection,
+        )
+        return MultiViewFusionResult(
+            views=ordered_views,
+            height=height_result,
+            confidence=confidence,
+            source_map=source_map,
+            aligned_heights=aligned_heights,
+            aligned_masks=aligned_masks,
+            aligned_confidences=aligned_confidences,
+            aligned_cycle_slips=aligned_cycle_slips,
+            cycle_slip_mask=cycle_slip_mask,
+            fusion_rejection_mask=rejection,
+            transform_matrices=matrices,
+            transform_kinds=kinds,
+            report=report,
+        )
+
+    def decode_multiview(
+        self,
+        input_dirs: dict[int, Path],
+        output_dir: Path,
+    ) -> MultiViewFusionResult:
+        output_dir = Path(output_dir).expanduser().resolve()
+        views = {
+            int(angle) % 360: self._decode_in_memory(path, view_angle=int(angle) % 360)
+            for angle, path in sorted(input_dirs.items())
+        }
+        fusion = self.fuse_multiview_results(views)
+        for angle, result in fusion.views.items():
+            self.save_outputs(
+                result,
+                output_dir / "views" / f"deg_{angle}",
+                preserve_capture_logs=False,
+            )
+        self.save_multiview_fusion_outputs(fusion, output_dir)
+        return fusion
+
     def save_outputs(
         self,
         result: DecodeResult,
@@ -1020,10 +1185,193 @@ class PcbFppDecoder:
         with (output_dir / "fusion_report.json").open("w", encoding="utf-8") as f:
             json.dump(fusion.report, f, indent=2, ensure_ascii=False)
 
+    def save_multiview_fusion_outputs(
+        self,
+        fusion: MultiViewFusionResult,
+        output_dir: Path,
+    ) -> None:
+        output_dir = Path(output_dir).expanduser().resolve()
+        full_outputs = self.config.output_profile == "full"
+        if not full_outputs:
+            _prune_compact_fusion_output(output_dir)
+        height_dir = output_dir / "height"
+        masks_dir = output_dir / "masks"
+        fusion_dir = output_dir / "fusion"
+        point_dir = output_dir / "point_cloud"
+        directories = [height_dir, masks_dir]
+        if full_outputs:
+            directories.extend([fusion_dir, point_dir])
+        for directory in directories:
+            directory.mkdir(parents=True, exist_ok=True)
+
+        np.save(height_dir / fusion.height.filename, fusion.height.height)
+        if full_outputs and fusion.height.filename != "height.npy":
+            np.save(height_dir / "height.npy", fusion.height.height)
+        title = "Four-view fused metric height (mm)" if fusion.height.metric else "Four-view fused phase"
+        save_colormap(
+            height_dir / "height_heatmap.png",
+            fusion.height.height,
+            fusion.height.mask,
+            cmap="turbo",
+            with_colorbar=True,
+            title=title,
+            colorbar_label=fusion.height.units,
+        )
+        if fusion.height.metric:
+            save_colormap(
+                height_dir / "height_mm.png",
+                fusion.height.height,
+                fusion.height.mask,
+                cmap="turbo",
+                with_colorbar=True,
+                title=title,
+                colorbar_label="mm",
+            )
+        save_colormap(
+            height_dir / "height_fused_preview.png",
+            fusion.height.height,
+            fusion.height.mask,
+            cmap="turbo",
+        )
+
+        save_mask(masks_dir / "fused_mask.png", fusion.height.mask)
+        save_mask(masks_dir / "source_missing.png", fusion.source_map == 0)
+        overlap_count = _bit_count_uint8(fusion.source_map)
+        save_mask(masks_dir / "source_overlap.png", overlap_count >= 2)
+        for index, angle in enumerate(fusion.views):
+            save_mask(
+                masks_dir / f"source_deg_{angle}.png",
+                (fusion.source_map & (1 << index)) != 0,
+            )
+        save_mask(masks_dir / "cycle_slip_mask.png", fusion.cycle_slip_mask)
+        save_mask(masks_dir / "fusion_rejection_mask.png", fusion.fusion_rejection_mask)
+
+        if full_outputs:
+            np.save(masks_dir / "source_map.npy", fusion.source_map)
+            np.save(fusion_dir / "confidence.npy", fusion.confidence)
+            np.save(fusion_dir / "fusion_rejection_mask.npy", fusion.fusion_rejection_mask)
+            for angle in fusion.views:
+                np.save(fusion_dir / f"aligned_height_{angle}.npy", fusion.aligned_heights[angle])
+                np.save(fusion_dir / f"aligned_mask_{angle}.npy", fusion.aligned_masks[angle])
+                np.save(
+                    fusion_dir / f"aligned_confidence_{angle}.npy",
+                    fusion.aligned_confidences[angle],
+                )
+                np.save(
+                    fusion_dir / f"aligned_cycle_slip_{angle}.npy",
+                    fusion.aligned_cycle_slips[angle],
+                )
+                np.save(
+                    fusion_dir / f"transform_matrix_{angle}.npy",
+                    fusion.transform_matrices[angle],
+                )
+                save_colormap(
+                    fusion_dir / f"aligned_height_{angle}_preview.png",
+                    fusion.aligned_heights[angle],
+                    fusion.aligned_masks[angle],
+                    cmap="turbo",
+                )
+            save_colormap(
+                fusion_dir / "confidence_preview.png",
+                fusion.confidence,
+                fusion.height.mask,
+                cmap="viridis",
+            )
+            ply_count = write_ascii_ply(
+                point_dir / "point_cloud.ply",
+                fusion.height.height,
+                fusion.height.mask,
+                max_points=self.config.max_point_cloud_points,
+            )
+            save_point_cloud_preview(
+                point_dir / "point_cloud_preview.png",
+                fusion.height.height,
+                fusion.height.mask,
+            )
+            fusion.report["point_cloud"] = {
+                "enabled": True,
+                "ply_vertices_written": ply_count,
+                "max_point_cloud_points": self.config.max_point_cloud_points,
+            }
+        else:
+            fusion.report["point_cloud"] = {
+                "enabled": False,
+                "reason": "output_profile=compact",
+                "max_point_cloud_points": self.config.max_point_cloud_points,
+            }
+        fusion.report["output"] = {"profile": self.config.output_profile}
+        fusion.report["capture_artifacts"] = preserve_capture_artifacts(
+            {
+                f"deg_{angle}": result.patterns.input_dir
+                for angle, result in fusion.views.items()
+            },
+            output_dir,
+        )
+        coverage = fusion.report["fusion"]["coverage"]
+        diagnosis_lines = [
+            "4방향 촬영 자동 진단",
+            "",
+            "촬영 각도: 0°, 90°, 180°, 270°",
+            f"융합 유효 픽셀: {coverage['fused_valid_ratio']:.1%}",
+            f"2개 이상 방향 중첩 픽셀: {coverage['overlap_ratio']:.1%}",
+            f"높이 불일치 제외 픽셀: {fusion.report['fusion']['rejection_ratio']:.1%}",
+            "",
+            "각 방향의 상세 품질은 views/deg_<angle>/capture_diagnosis.txt를 확인하세요.",
+        ]
+        (output_dir / "capture_diagnosis.txt").write_text(
+            "\n".join(diagnosis_lines) + "\n",
+            encoding="utf-8-sig",
+        )
+        for filename in ("decode_report.json", "fusion_report.json"):
+            with (output_dir / filename).open("w", encoding="utf-8") as handle:
+                json.dump(fusion.report, handle, indent=2, ensure_ascii=False)
+
     def decode(self, input_dir: Path, output_dir: Path) -> DecodeResult:
         result = self._decode_in_memory(input_dir)
         self.save_outputs(result, output_dir)
         return result
+
+    def _fusion_transform_for_angle(
+        self,
+        angle: int,
+        target_shape: tuple[int, int],
+        source_shape: tuple[int, int],
+    ) -> tuple[np.ndarray, str]:
+        paths = {
+            90: self.config.fusion_transform_90,
+            180: self.config.fusion_transform,
+            270: self.config.fusion_transform_270,
+        }
+        path = paths.get(int(angle) % 360)
+        if path is not None:
+            matrix = _load_transform_matrix(path)
+            if matrix.shape == (2, 3):
+                return matrix.astype(np.float32), "affine"
+            if matrix.shape == (3, 3):
+                return matrix.astype(np.float32), "homography"
+            raise ValueError(
+                f"fusion transform for {angle} degrees must be 2x3 or 3x3"
+            )
+        if target_shape != source_shape:
+            raise ValueError(
+                f"0 and {angle} degree scans must have equal shapes unless an angle-specific "
+                "fusion transform is provided"
+            )
+        height, width = target_shape
+        if self.config.fusion_center is None:
+            cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
+        else:
+            cx, cy = self.config.fusion_center
+        radians = math.radians(-float(angle))
+        cosine, sine = math.cos(radians), math.sin(radians)
+        matrix = np.asarray(
+            [
+                [cosine, -sine, cx - cosine * cx + sine * cy],
+                [sine, cosine, cy - sine * cx - cosine * cy],
+            ],
+            dtype=np.float32,
+        )
+        return matrix, "affine"
 
     def _fusion_transform(
         self,
@@ -1116,6 +1464,79 @@ class PcbFppDecoder:
             "analysis_roi": {
                 "deg_0": deg0.report.get("analysis_roi"),
                 "deg_180": deg180.report.get("analysis_roi"),
+            },
+        }
+
+    def _build_multiview_fusion_report(
+        self,
+        views: dict[int, DecodeResult],
+        height: HeightResult,
+        source_map: np.ndarray,
+        matrices: dict[int, np.ndarray],
+        kinds: dict[int, str],
+        cycle_slip_mask: np.ndarray,
+        fusion_rejection_mask: np.ndarray,
+    ) -> dict[str, Any]:
+        total = int(np.prod(source_map.shape))
+        contribution = {
+            f"deg_{angle}_contribution_ratio": float(
+                np.count_nonzero((source_map & (1 << index)) != 0) / total
+            )
+            for index, angle in enumerate(views)
+        }
+        overlap_count = _bit_count_uint8(source_map)
+        coverage = {
+            **contribution,
+            "overlap_ratio": float(np.count_nonzero(overlap_count >= 2) / total),
+            "four_view_overlap_ratio": float(np.count_nonzero(overlap_count == 4) / total),
+            "fused_valid_ratio": float(np.count_nonzero(source_map != 0) / total),
+            "missing_ratio": float(np.count_nonzero(source_map == 0) / total),
+        }
+        view_reports = {
+            f"deg_{angle}": {
+                "input_dir": str(result.patterns.input_dir),
+                "combined_mask_ratio": result.report["mask_coverage"]["combined_mask_ratio"],
+                "height": result.report["height"],
+                "analysis_roi": result.report.get("analysis_roi"),
+            }
+            for angle, result in views.items()
+        }
+        return {
+            "input_dir": str(views[0].patterns.input_dir),
+            "input_dirs": {
+                f"deg_{angle}": str(result.patterns.input_dir) for angle, result in views.items()
+            },
+            "image_shape": {"height": source_map.shape[0], "width": source_map.shape[1]},
+            "config": _jsonable_config(self.config),
+            "fusion": {
+                "view_angles_deg": list(views),
+                "mode": self.config.fusion_mode,
+                "transform_kinds": {str(angle): kinds[angle] for angle in views},
+                "transform_matrices": {
+                    str(angle): matrices[angle].tolist() for angle in views
+                },
+                "max_height_difference_mm": self.config.fusion_max_height_difference_mm,
+                "inconsistent_policy": self.config.fusion_inconsistent_policy,
+                "cycle_slip_ratio": float(np.count_nonzero(cycle_slip_mask) / total),
+                "rejection_ratio": float(np.count_nonzero(fusion_rejection_mask) / total),
+                "source_map_encoding": {
+                    str(1 << index): f"deg_{angle}" for index, angle in enumerate(views)
+                },
+                "coverage": coverage,
+            },
+            "views": view_reports,
+            "height": {
+                "mode": height.mode,
+                "metric": height.metric,
+                "units": height.units,
+                "message": height.message,
+                "stats": height.stats,
+                "reference_used": height.reference_used,
+            },
+            "optical_setup": views[0].report.get("optical_setup"),
+            "analysis_roi": {
+                f"deg_{angle}": result.report.get("analysis_roi")
+                for angle, result in views.items()
             },
         }
 
@@ -1214,9 +1635,15 @@ class PcbFppDecoder:
         if view_angle == 0:
             reference_phase = self.config.reference_phase_0 or reference_phase
             reference_scan = self.config.reference_scan_0 or reference_scan
+        elif view_angle == 90:
+            reference_phase = self.config.reference_phase_90 or reference_phase
+            reference_scan = self.config.reference_scan_90 or reference_scan
         elif view_angle == 180:
             reference_phase = self.config.reference_phase_180 or reference_phase
             reference_scan = self.config.reference_scan_180 or reference_scan
+        elif view_angle == 270:
+            reference_phase = self.config.reference_phase_270 or reference_phase
+            reference_scan = self.config.reference_scan_270 or reference_scan
 
         if reference_phase is not None:
             path = Path(reference_phase).expanduser().resolve()
@@ -1428,14 +1855,26 @@ def _optical_setup_report(
             "reference_phase_0": str(config.reference_phase_0)
             if config.reference_phase_0
             else None,
+            "reference_phase_90": str(config.reference_phase_90)
+            if config.reference_phase_90
+            else None,
             "reference_phase_180": str(config.reference_phase_180)
             if config.reference_phase_180
+            else None,
+            "reference_phase_270": str(config.reference_phase_270)
+            if config.reference_phase_270
             else None,
             "reference_scan_0": str(config.reference_scan_0)
             if config.reference_scan_0
             else None,
+            "reference_scan_90": str(config.reference_scan_90)
+            if config.reference_scan_90
+            else None,
             "reference_scan_180": str(config.reference_scan_180)
             if config.reference_scan_180
+            else None,
+            "reference_scan_270": str(config.reference_scan_270)
+            if config.reference_scan_270
             else None,
             "delta_phase_file": "height/delta_phase.npy"
             if height.delta_phase is not None
@@ -1584,6 +2023,108 @@ def _fuse_height_maps(
         confidence0[rejected_valid], confidence180[rejected_valid]
     )
     return fused.astype(np.float32), fused_mask, source_map, fused_confidence, rejection
+
+
+def _fuse_multiview_height_maps(
+    heights: dict[int, np.ndarray],
+    masks: dict[int, np.ndarray],
+    confidences: dict[int, np.ndarray],
+    cycle_slips: dict[int, np.ndarray],
+    *,
+    mode: str,
+    epsilon: float,
+    max_difference: float | None,
+    inconsistent_policy: str,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    if mode not in ("average", "modulation-weighted"):
+        raise ValueError("fusion_mode must be average or modulation-weighted")
+    if inconsistent_policy not in ("higher-confidence", "invalid"):
+        raise ValueError("fusion_inconsistent_policy must be higher-confidence or invalid")
+    angles = tuple(heights)
+    shape = np.asarray(heights[angles[0]]).shape
+    best_height = np.full(shape, np.nan, dtype=np.float32)
+    best_confidence = np.full(shape, -1.0, dtype=np.float32)
+    valid_count = np.zeros(shape, dtype=np.uint8)
+    usable_by_angle: dict[int, np.ndarray] = {}
+    for angle in angles:
+        image = np.asarray(heights[angle], dtype=np.float32)
+        valid = np.asarray(masks[angle], dtype=bool) & np.isfinite(image)
+        valid_count += valid.astype(np.uint8)
+        usable = valid & ~np.asarray(cycle_slips[angle], dtype=bool)
+        usable_by_angle[angle] = usable
+        confidence = np.where(
+            usable & np.isfinite(confidences[angle]),
+            np.maximum(confidences[angle], 0.0),
+            -1.0,
+        ).astype(np.float32)
+        choose = usable & (confidence > best_confidence)
+        best_height[choose] = image[choose]
+        best_confidence[choose] = confidence[choose]
+
+    numerator = np.zeros(shape, dtype=np.float32)
+    denominator = np.zeros(shape, dtype=np.float32)
+    selected_count = np.zeros(shape, dtype=np.uint8)
+    source_map = np.zeros(shape, dtype=np.uint8)
+    fused_confidence = np.zeros(shape, dtype=np.float32)
+    rejection = np.zeros(shape, dtype=bool)
+    for index, angle in enumerate(angles):
+        image = np.asarray(heights[angle], dtype=np.float32)
+        usable = usable_by_angle[angle]
+        if max_difference is None:
+            selected = usable
+        else:
+            difference = np.abs(
+                np.where(usable, image, 0.0) - np.where(usable, best_height, 0.0)
+            )
+            selected = usable & np.isfinite(best_height) & (difference <= max_difference)
+        raw_valid = np.asarray(masks[angle], dtype=bool) & np.isfinite(image)
+        rejection |= raw_valid & ~selected
+        confidence = np.where(
+            selected & np.isfinite(confidences[angle]),
+            np.maximum(confidences[angle], 0.0),
+            0.0,
+        ).astype(np.float32)
+        if mode == "modulation-weighted":
+            weight = confidence
+        else:
+            weight = selected.astype(np.float32)
+        numerator += np.where(selected, image, 0.0) * weight
+        denominator += weight
+        selected_count += selected.astype(np.uint8)
+        source_map[selected] |= np.uint8(1 << index)
+        fused_confidence = np.maximum(fused_confidence, confidence)
+
+    fused = np.divide(
+        numerator,
+        np.maximum(denominator, epsilon),
+        out=np.full(shape, np.nan, dtype=np.float32),
+        where=denominator > epsilon,
+    )
+    if mode == "modulation-weighted":
+        no_weight = (selected_count > 0) & (denominator <= epsilon)
+        if np.any(no_weight):
+            fallback_sum = np.zeros(shape, dtype=np.float32)
+            for angle in angles:
+                selected = (source_map & np.uint8(1 << angles.index(angle))) != 0
+                fallback_sum += np.where(selected, heights[angle], 0.0)
+            fused[no_weight] = fallback_sum[no_weight] / selected_count[no_weight]
+
+    if inconsistent_policy == "invalid":
+        invalidate = rejection & (valid_count >= 2)
+        fused[invalidate] = np.nan
+        source_map[invalidate] = 0
+        fused_confidence[invalidate] = 0.0
+    fused_mask = source_map != 0
+    fused[~fused_mask] = np.nan
+    return fused, fused_mask, source_map, fused_confidence, rejection
+
+
+def _bit_count_uint8(values: np.ndarray) -> np.ndarray:
+    source = np.asarray(values, dtype=np.uint8)
+    count = np.zeros(source.shape, dtype=np.uint8)
+    for bit in (1, 2, 4, 8):
+        count += ((source & bit) != 0).astype(np.uint8)
+    return count
 
 
 def _warp_float_with_mask(
