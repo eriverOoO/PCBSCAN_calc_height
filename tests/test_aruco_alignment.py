@@ -9,9 +9,13 @@ from PIL import Image
 from pcb_fpp_decoder.aruco_alignment import (
     estimate_aruco_transform,
     estimate_aruco_transform_from_images,
+    estimate_stage_cross_transform_from_images,
 )
 from pcb_fpp_decoder.aruco_marker import generate_marker_image
-from pcb_fpp_decoder.fusion_registration import estimate_and_save_fusion_transform
+from pcb_fpp_decoder.fusion_registration import (
+    estimate_and_save_fusion_transform,
+    estimate_and_save_view_transform,
+)
 from pcb_fpp_decoder.stage_precalibration import save_stage_precalibration_json
 
 
@@ -155,6 +159,46 @@ def test_estimate_aruco_transform_accepts_one_visible_opposite_pair(tmp_path):
     assert result.reprojection_rmse_px < 0.8
 
 
+def test_stage_cross_alignment_accepts_different_visible_pairs_at_90_degrees(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    if not hasattr(cv2, "aruco"):
+        pytest.skip("OpenCV ArUco module is not available")
+
+    target = np.asarray(_target_with_four_markers()).copy()
+    source_matrix = cv2.getRotationMatrix2D((350.0, 350.0), 90.0, 1.0)
+    source = cv2.warpAffine(
+        target,
+        source_matrix,
+        (700, 700),
+        flags=cv2.INTER_NEAREST,
+        borderValue=255,
+    )
+    # Target exposes IDs 0/2; after rotation the same vertical crop exposes 1/3.
+    target[:, :250] = 255
+    target[:, 450:] = 255
+    source[:, :250] = 255
+    source[:, 450:] = 255
+    target_path = tmp_path / "deg_0.png"
+    source_path = tmp_path / "deg_90.png"
+    Image.fromarray(target).save(target_path)
+    Image.fromarray(source).save(source_path)
+
+    result = estimate_stage_cross_transform_from_images(
+        target_path,
+        source_path,
+        marker_ids=[0, 1, 2, 3],
+        marker_center_radius_mm=21.5,
+        marker_black_square_mm=8.0,
+        expected_rotation_deg=90.0,
+    )
+
+    assert [marker.marker_id for marker in result.target_markers] == [0, 2]
+    assert [marker.marker_id for marker in result.source_markers] == [1, 3]
+    assert result.deviation_from_expected_deg == pytest.approx(0.0, abs=0.5)
+    assert result.rotation_center_target_xy == pytest.approx([350.0, 350.0], abs=2.0)
+    assert result.reprojection_rmse_px < 0.8
+
+
 def test_auto_fusion_registration_saves_aruco_transform(tmp_path):
     cv2 = pytest.importorskip("cv2")
     if not hasattr(cv2, "aruco"):
@@ -193,5 +237,48 @@ def test_auto_fusion_registration_saves_aruco_transform(tmp_path):
     assert result is not None
     assert result.registration == "aruco"
     assert result.path == output_dir / "fusion" / "aruco_fusion_transform.json"
+
+
+def test_four_direction_registration_saves_angle_specific_stage_cross_transform(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    if not hasattr(cv2, "aruco"):
+        pytest.skip("OpenCV ArUco module is not available")
+
+    target = np.asarray(_target_with_four_markers()).copy()
+    source = cv2.warpAffine(
+        target,
+        cv2.getRotationMatrix2D((350.0, 350.0), 90.0, 1.0),
+        (700, 700),
+        flags=cv2.INTER_NEAREST,
+        borderValue=255,
+    )
+    target[:, :250] = 255
+    target[:, 450:] = 255
+    source[:, :250] = 255
+    source[:, 450:] = 255
+    input_0 = tmp_path / "deg_0"
+    input_90 = tmp_path / "deg_90"
+    output = tmp_path / "processed"
+    input_0.mkdir()
+    input_90.mkdir()
+    Image.fromarray(target).save(input_0 / "pattern_000.png")
+    Image.fromarray(source).save(input_90 / "pattern_000.png")
+
+    result = estimate_and_save_view_transform(
+        "aruco",
+        input_0,
+        input_90,
+        output,
+        source_angle_deg=90,
+        aruco_method="stage-cross",
+        aruco_marker_center_radius_mm=21.5,
+        aruco_marker_black_square_mm=8.0,
+    )
+
+    assert result is not None
+    assert result.path == output / "fusion" / "aruco_transform_deg_90.json"
+    payload = json.loads(result.path.read_text(encoding="utf-8"))
+    assert payload["source"]["role"] == "90-degree"
+    assert payload["aruco"]["deviation_from_expected_deg"] == pytest.approx(0.0, abs=0.5)
     assert result.path.exists()
     assert "ArUco homography transform estimated" in result.summary

@@ -54,6 +54,8 @@ class AlignmentResult:
     rotation_center_target_xy: list[float] | None
     target_markers: list[DetectedMarker]
     source_markers: list[DetectedMarker]
+    expected_rotation_deg: float = 180.0
+    deviation_from_expected_deg: float | None = None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -123,6 +125,7 @@ def estimate_aruco_transform(
     image_name: str = "pattern_000.png",
     method: str = "homography",
     ransac_threshold_px: float = 3.0,
+    expected_rotation_deg: float = 180.0,
 ) -> AlignmentResult:
     marker_ids = marker_ids or [0, 1, 2, 3]
     return estimate_aruco_transform_from_images(
@@ -132,6 +135,7 @@ def estimate_aruco_transform(
         marker_ids=marker_ids,
         method=method,
         ransac_threshold_px=ransac_threshold_px,
+        expected_rotation_deg=expected_rotation_deg,
     )
 
 
@@ -143,6 +147,7 @@ def estimate_aruco_transform_from_images(
     marker_ids: list[int] | None = None,
     method: str = "homography",
     ransac_threshold_px: float = 3.0,
+    expected_rotation_deg: float = 180.0,
 ) -> AlignmentResult:
     """Map a rotated image into a 0-degree image using their ArUco markers.
 
@@ -204,8 +209,10 @@ def estimate_aruco_transform_from_images(
     )
     rotation_deg, similarity_scale, rotation_center = _similarity_rotation_summary(src, dst)
     deviation_deg = None
+    deviation_expected = None
     if rotation_deg is not None:
         deviation_deg = abs(abs(rotation_deg) - 180.0)
+        deviation_expected = _rotation_magnitude_deviation(rotation_deg, expected_rotation_deg)
 
     return AlignmentResult(
         matrix=np.asarray(matrix, dtype=float).tolist(),
@@ -222,6 +229,128 @@ def estimate_aruco_transform_from_images(
         rotation_center_target_xy=rotation_center,
         target_markers=[target_by_id[marker_id] for marker_id in marker_ids],
         source_markers=[source_by_id[marker_id] for marker_id in marker_ids],
+        expected_rotation_deg=float(expected_rotation_deg),
+        deviation_from_expected_deg=deviation_expected,
+    )
+
+
+def estimate_stage_cross_transform_from_images(
+    target_image_path: Path,
+    source_image_path: Path,
+    *,
+    dictionary_name: str = "DICT_4X4_50",
+    marker_ids: list[int] | None = None,
+    marker_center_radius_mm: float = 25.0,
+    marker_black_square_mm: float = 11.4,
+    expected_rotation_deg: float = 180.0,
+    ransac_threshold_px: float = 3.0,
+) -> AlignmentResult:
+    """Map one rotated stage view to the zero-degree view via board coordinates.
+
+    Unlike direct ID-to-ID alignment, the two images do not need to expose the
+    same marker IDs.  Each image independently estimates a homography from the
+    known top/right/bottom/left stage-cross layout, then the homographies are
+    composed into a source-to-target transform.
+    """
+    marker_ids = marker_ids or [0, 1, 2, 3]
+    if len(marker_ids) != 4:
+        raise ValueError("stage-cross registration requires four marker IDs")
+    if marker_center_radius_mm <= 0 or marker_black_square_mm <= 0:
+        raise ValueError("stage-cross marker radius and black-square size must be positive")
+
+    target_image = _load_detection_image(Path(target_image_path))
+    source_image = _load_detection_image(Path(source_image_path))
+    target_markers = _detect_markers(target_image, dictionary_name)
+    source_markers = _detect_markers(source_image, dictionary_name)
+    target_by_id = {marker.marker_id: marker for marker in target_markers}
+    source_by_id = {marker.marker_id: marker for marker in source_markers}
+
+    target_object, target_image_points, target_used = _stage_cross_correspondences(
+        marker_ids,
+        target_by_id,
+        marker_center_radius_mm=marker_center_radius_mm,
+        marker_black_square_mm=marker_black_square_mm,
+    )
+    source_object, source_image_points, source_used = _stage_cross_correspondences(
+        marker_ids,
+        source_by_id,
+        marker_center_radius_mm=marker_center_radius_mm,
+        marker_black_square_mm=marker_black_square_mm,
+    )
+    if len(target_used) < 2 or len(source_used) < 2:
+        raise ValueError(
+            "stage-cross registration requires at least two visible markers in each view; "
+            f"target has {target_used}, source has {source_used}"
+        )
+
+    cv2 = _load_cv2()
+    target_h, target_inliers = cv2.findHomography(
+        target_object,
+        target_image_points,
+        method=cv2.RANSAC,
+        ransacReprojThreshold=float(ransac_threshold_px),
+    )
+    source_h, source_inliers = cv2.findHomography(
+        source_object,
+        source_image_points,
+        method=cv2.RANSAC,
+        ransacReprojThreshold=float(ransac_threshold_px),
+    )
+    if target_h is None or source_h is None:
+        raise ValueError("Could not estimate stage-cross homography from visible markers")
+    try:
+        matrix = target_h @ np.linalg.inv(source_h)
+    except np.linalg.LinAlgError as exc:
+        raise ValueError("Stage-cross source homography is singular") from exc
+    matrix = matrix / matrix[2, 2]
+
+    target_mask = _normalize_inlier_mask(target_inliers, point_count=target_object.shape[0])
+    source_mask = _normalize_inlier_mask(source_inliers, point_count=source_object.shape[0])
+    errors = np.concatenate(
+        [
+            _point_distances(_project_points(target_object, target_h, "homography"), target_image_points),
+            _point_distances(_project_points(source_object, source_h, "homography"), source_image_points),
+        ]
+    )
+    inlier_mask = np.concatenate([target_mask, source_mask])
+    rmse = float(np.sqrt(np.mean(errors * errors)))
+    inlier_rmse = float(np.sqrt(np.mean(errors[inlier_mask] * errors[inlier_mask])))
+
+    layout_centers = _stage_cross_layout_centers(marker_ids, marker_center_radius_mm)
+    source_centers = _project_points(layout_centers, source_h, "homography")
+    target_centers = _project_points(layout_centers, target_h, "homography")
+    rotation_deg, similarity_scale, rotation_center = _similarity_rotation_summary(
+        source_centers,
+        target_centers,
+    )
+    deviation_expected = (
+        _rotation_magnitude_deviation(rotation_deg, float(expected_rotation_deg))
+        if rotation_deg is not None
+        else None
+    )
+    deviation_180 = (
+        _angular_distance_degrees(rotation_deg, -180.0)
+        if rotation_deg is not None
+        else None
+    )
+    used_ids = sorted(set(target_used) | set(source_used))
+    return AlignmentResult(
+        matrix=np.asarray(matrix, dtype=float).tolist(),
+        transform_kind="homography",
+        reprojection_rmse_px=rmse,
+        inlier_reprojection_rmse_px=inlier_rmse,
+        max_reprojection_error_px=float(np.max(errors)),
+        point_count=int(errors.size),
+        inlier_count=int(np.count_nonzero(inlier_mask)),
+        marker_ids=used_ids,
+        rotation_source_to_target_deg=rotation_deg,
+        deviation_from_180_deg=deviation_180,
+        similarity_scale=similarity_scale,
+        rotation_center_target_xy=rotation_center,
+        target_markers=[target_by_id[marker_id] for marker_id in target_used],
+        source_markers=[source_by_id[marker_id] for marker_id in source_used],
+        expected_rotation_deg=float(expected_rotation_deg),
+        deviation_from_expected_deg=deviation_expected,
     )
 
 
@@ -235,6 +364,8 @@ def save_alignment_json(
     image_name: str,
     method: str,
     ransac_threshold_px: float | None = None,
+    target_angle_deg: float = 0.0,
+    source_angle_deg: float = 180.0,
 ) -> None:
     key = "homography" if result.transform_kind == "homography" else "affine"
     payload: dict[str, Any] = {
@@ -242,12 +373,12 @@ def save_alignment_json(
         "matrix": result.matrix,
         "transform_kind": result.transform_kind,
         "source": {
-            "role": "rotated",
+            "role": f"{source_angle_deg:g}-degree",
             "input_dir": str(input_180_dir),
             "image": image_name,
         },
         "target": {
-            "role": "0-degree",
+            "role": f"{target_angle_deg:g}-degree",
             "input_dir": str(input_dir),
             "image": image_name,
         },
@@ -263,6 +394,8 @@ def save_alignment_json(
             "inlier_count": result.inlier_count,
             "rotation_source_to_target_deg": result.rotation_source_to_target_deg,
             "deviation_from_180_deg": result.deviation_from_180_deg,
+            "expected_rotation_deg": result.expected_rotation_deg,
+            "deviation_from_expected_deg": result.deviation_from_expected_deg,
             "similarity_scale": result.similarity_scale,
             "rotation_center_target_xy": result.rotation_center_target_xy,
             "target_markers": [asdict(marker) for marker in result.target_markers],
@@ -385,6 +518,53 @@ def _normalize_inlier_mask(inliers: np.ndarray | None, *, point_count: int) -> n
     return mask
 
 
+def _stage_cross_layout_centers(marker_ids: list[int], radius_mm: float) -> np.ndarray:
+    positions = (
+        (0.0, -radius_mm),
+        (radius_mm, 0.0),
+        (0.0, radius_mm),
+        (-radius_mm, 0.0),
+    )
+    return np.asarray(positions[: len(marker_ids)], dtype=np.float32)
+
+
+def _stage_cross_correspondences(
+    requested_ids: list[int],
+    detected_by_id: dict[int, DetectedMarker],
+    *,
+    marker_center_radius_mm: float,
+    marker_black_square_mm: float,
+) -> tuple[np.ndarray, np.ndarray, list[int]]:
+    centers = _stage_cross_layout_centers(requested_ids, marker_center_radius_mm)
+    half = 0.5 * float(marker_black_square_mm)
+    local_corners = np.asarray(
+        [(-half, -half), (half, -half), (half, half), (-half, half)],
+        dtype=np.float32,
+    )
+    object_points: list[np.ndarray] = []
+    image_points: list[np.ndarray] = []
+    used_ids: list[int] = []
+    for index, marker_id in enumerate(requested_ids):
+        marker = detected_by_id.get(marker_id)
+        if marker is None:
+            continue
+        object_points.append(local_corners + centers[index])
+        image_points.append(np.asarray(marker.corners, dtype=np.float32))
+        used_ids.append(marker_id)
+    if not object_points:
+        return (
+            np.empty((0, 2), dtype=np.float32),
+            np.empty((0, 2), dtype=np.float32),
+            used_ids,
+        )
+    return np.concatenate(object_points), np.concatenate(image_points), used_ids
+
+
+def _point_distances(first: np.ndarray, second: np.ndarray) -> np.ndarray:
+    delta = np.asarray(first, dtype=np.float32) - np.asarray(second, dtype=np.float32)
+    return np.sqrt(np.sum(delta * delta, axis=1))
+
+
 def _select_marker_ids_for_alignment(
     requested_ids: list[int],
     target_by_id: dict[int, DetectedMarker],
@@ -474,6 +654,16 @@ def _normalize_degrees(angle: float) -> float:
     while angle > 180.0:
         angle -= 360.0
     return angle
+
+
+def _angular_distance_degrees(first: float, second: float) -> float:
+    return abs(_normalize_degrees(float(first) - float(second)))
+
+
+def _rotation_magnitude_deviation(measured: float, expected: float) -> float:
+    measured_magnitude = abs(_normalize_degrees(float(measured)))
+    expected_magnitude = abs(_normalize_degrees(float(expected)))
+    return abs(measured_magnitude - expected_magnitude)
 
 
 def main(argv: list[str] | None = None) -> int:
