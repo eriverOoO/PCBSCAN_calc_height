@@ -233,7 +233,44 @@ CLI 기본 출력은 `compact` 프로필입니다. 보고서, 미리보기 PNG, 
 
 `scan_log.json`이 있으면 `decode_report.json`의 `phone_capture` 항목에 수동 노출/ISO, 수동 초점, AWB lock, HDR bracket, scan type, rig/calibration id, JPEG 사용 여부, 반전 Gray 누락 여부가 기록됩니다. 폰 촬영에서 경고가 없어야 한다는 뜻은 아니지만, height map을 해석하기 전에는 이 항목과 `masks/combined_mask.png`, `height/delta_phase_preview.png`를 함께 확인하세요.
 
-## 0도/180도 데이터 통합
+## 0°/90°/180°/270° 4방향 데이터 통합
+
+현재 4방향 촬영의 표준 폴더 구성은 다음과 같습니다. `--four-direction`은 스캔 루트 아래의 네 폴더를 자동으로 찾고, 하나라도 없으면 2방향으로 조용히 축소하지 않고 오류로 중단합니다.
+
+```text
+captures/scan_xxx/
+  angle_000/
+  angle_090/
+  angle_180/
+  angle_270/
+```
+
+각 폴더의 `pattern_000.png`에는 `aruco_stage_d105_r25_total15_a4.pdf`로 출력한 ID 0/1/2/3 마커 중 최소 두 개가 보여야 합니다. 마커 중심은 스테이지 중심에서 각각 25 mm, 검은 ArUco 사각형은 11.4 mm입니다. 각 뷰는 자기 사진에서 검출된 마커를 실제 스테이지 좌표로 먼저 보낸 뒤 0° 카메라 프레임으로 변환하므로, 0°와 90° 사진에 서로 다른 마커 쌍이 보여도 정합할 수 있습니다. 한 사진 안에서는 최소 두 마커가 필요하며, 한 마커만 보이면 그 뷰의 스테이지 좌표계와 회전·이동을 안정적으로 결정하지 못하므로 중단합니다.
+
+```powershell
+.venv\Scripts\python.exe scripts\decode_scan.py `
+  --input captures\scan_xxx `
+  --four-direction `
+  --output processed\scan_xxx\fused_four `
+  --height-mode phase_linear `
+  --reference-phase-0 processed\reference\reference_phase_0.npy `
+  --reference-phase-90 processed\reference\reference_phase_90.npy `
+  --reference-phase-180 processed\reference\reference_phase_180.npy `
+  --reference-phase-270 processed\reference\reference_phase_270.npy `
+  --calibration-config examples\calibration_config.example.json `
+  --fusion-registration aruco `
+  --aruco-method stage-cross `
+  --aruco-marker-center-radius-mm 25 `
+  --aruco-marker-black-square-mm 11.4
+```
+
+하드웨어 트리거 촬영을 강제 검증하려면 `--require-hardware-capture`를 추가합니다. 이때 각 각도의 `scan_log.json`에는 `stage.settled=true`, `stage.commanded_angle_deg`, 실제 또는 측정 각도, 고유한 `stage.position_id`가 있어야 하고 기본 허용 오차는 ±0.5°입니다. `--stage-angle-tolerance-deg`로 장비 사양에 맞게 조정할 수 있습니다.
+
+정합 결과는 `fusion/aruco_transform_deg_90.json`, `aruco_transform_deg_180.json`, `aruco_transform_deg_270.json`에 남습니다. 계산은 네 높이 지도를 순차 평균하지 않고, 모두 0° 프레임에 맞춘 뒤 동시에 비교합니다. 한 뷰만 유효하면 그 값을 쓰고, 겹치는 뷰는 modulation 신뢰도로 가중하며, 높이 차이가 허용치를 넘는 관측은 더 높은 신뢰도 뷰를 선택하거나 `invalid` 정책에 따라 제외합니다. `source_map.npy`는 비트 마스크 `1=0°`, `2=90°`, `4=180°`, `8=270°`로 기여 뷰를 기록하므로 값 15는 네 뷰 모두가 기여했다는 뜻입니다.
+
+이 설계는 OpenCV의 공식 [ArUco 검출 문서](https://docs.opencv.org/4.13.0/d5/dae/tutorial_aruco_detection.html)가 설명하는 마커 코너 대응점과 여러 마커/부분 가림을 처리하는 Board 개념을 따릅니다. 모든 뷰를 공통 기준 프레임으로 정렬한 뒤 함께 결합하는 구조는 Open3D 공식 [multiway registration 문서](https://open3d.org/docs/latest/tutorial/Advanced/multiway_registration.html)의 전역 기준 프레임 원칙과 같은 방향입니다. 다만 이 구현은 3D ICP가 아니라 알려진 평면 stage-cross 좌표에 대한 2D homography와 구조광 높이 신뢰도 결합을 사용합니다.
+
+## 0도/180도 데이터 통합(호환 모드)
 
 PCB를 정방향으로 한 번, 180도 회전해서 한 번 촬영한 경우 `--input-180`을 추가하면 두 높이 지도를 정렬하고 통합합니다.
 
@@ -287,26 +324,26 @@ python scripts/decode_scan.py \
 
 로테이션 스테이지가 정확히 180.00도 회전하지 않는 경우에는 PCB에 붙인 ArUco 마커를 이용해 `deg_180` 영상을 `deg_0` 좌표계로 보정할 수 있습니다. 마커 이미지는 저장소에 포함하지 않고, 필요할 때 다음 명령으로 다시 생성합니다.
 
-현재 기본 실행값은 스테이지 ArUco 마커를 사용하는 쪽입니다. 0/180 통합에서는 `--fusion-registration aruco`가 기본이고, 단일 디코딩에서도 `--analysis-roi aruco`, `--analysis-aruco-layout stage-cross`, 마커 반경 `42 mm`, 스테이지 지름 `105 mm`, PCB `30 x 30 mm`가 기본입니다. 마커가 없는 과거 촬영 데이터를 처리할 때만 `--analysis-roi none` 또는 `--fusion-registration rotation-180`을 명시하세요.
+현재 기본 실행값은 스테이지 ArUco 마커를 사용하는 쪽입니다. 4방향 통합에서는 `--fusion-registration aruco`, `--aruco-method stage-cross`가 기본이고, 단일 디코딩에서도 `--analysis-roi aruco`, `--analysis-aruco-layout stage-cross`, 마커 반경 `25 mm`, 스테이지 지름 `105 mm`, PCB `30 x 30 mm`가 기본입니다. 마커가 없는 과거 촬영 데이터를 처리할 때만 `--analysis-roi none` 또는 2방향의 `--fusion-registration rotation-180`을 명시하세요.
 
-스테이지 원판 전체에 붙일 때는 실제 스테이지에 맞는 레이아웃을 생성해 사용합니다. 아래 명령은 지름 105 mm 원판 안에 ID 0, 1, 2, 3 마커를 위/오른쪽/아래/왼쪽 순서로 배치합니다. 각 마커 중심은 원판 중심에서 42 mm 떨어지고, 흰 여백 포함 전체 마커 크기는 약 15 mm입니다.
+스테이지 원판 전체에 붙일 때는 실제 스테이지에 맞는 레이아웃을 생성해 사용합니다. 아래 명령은 지름 105 mm 원판 안에 ID 0, 1, 2, 3 마커를 위/오른쪽/아래/왼쪽 순서로 배치합니다. 각 마커 중심은 원판 중심에서 25 mm 떨어지고, 흰 여백 포함 전체 마커 크기는 약 15 mm입니다. 이 값들이 스크립트의 기본값이므로 옵션 없이 실행해도 `aruco_stage_d105_r25_total15_a4.pdf`가 생성됩니다.
 
 ```powershell
 .venv\Scripts\python.exe scripts\generate_aruco_stage_layout.py `
   --ids 0,1,2,3 `
   --dictionary DICT_4X4_50 `
   --stage-diameter-mm 105 `
-  --marker-radius-mm 42 `
+  --marker-radius-mm 25 `
   --marker-total-mm 15 `
   --quiet-zone-mm 1.8 `
   --dpi 300 `
   --output aruco_markers_stage_layout `
-  --prefix aruco_stage_d105_r42_total15
+  --prefix aruco_stage_d105_r25_total15
 ```
 
 인쇄할 때는 프린터 배율을 `실제 크기` 또는 `100%`로 두고, `용지에 맞춤` 옵션은 끄세요. A4 PDF로 출력한 뒤 원형 외곽선을 따라 잘라 원판 중심과 십자 표시를 맞춰 붙입니다. 생성된 `aruco_markers*`와 `markers` 폴더는 `.gitignore`에 포함되어 있으므로 출력물은 Git에 추가하지 않습니다.
 
-보정은 출력 치수나 부착 치수를 신뢰해서 계산하지 않습니다. 실제 촬영된 `pattern_000.png`에서 마커 코너를 검출하고, `deg_180`의 코너들이 `deg_0` 코너들과 가장 잘 맞도록 RANSAC 기반 homography를 추정합니다. 따라서 프린터 배율, 자름, 부착 위치가 조금 틀어져도 두 촬영 이미지에서 마커가 선명하게 검출되면 그 실제 오차가 transform에 반영됩니다.
+4방향 보정은 출력 치수와 부착 치수(반경 25 mm, 검은 사각형 11.4 mm)를 스테이지 좌표계 정의에 사용합니다. 각 사진에서 마커 코너를 검출하고 RANSAC 기반 homography로 사진↔스테이지 변환을 구하므로 작은 검출 오차에는 강하지만, 인쇄 배율이나 마커 부착 위치 오차가 곧 좌표계 오차가 됩니다. 반드시 100% 배율로 인쇄하고 중심 십자와 실제 회전 중심을 맞추세요. 기존 2방향 `homography` 방식은 두 사진에 같은 마커들이 보일 때 직접 영상 간 대응을 구하므로 그 호환 경로도 유지됩니다.
 
 원판을 A4에서 잘라 붙이면 마커 주변과 PCB-마커 사이의 흰 종이 영역도 촬영됩니다. 이 영역은 마커 검출에는 필요하지만 높이 계산에는 들어가면 안 되므로, 디코딩 시 ArUco 기반 analysis ROI를 함께 켭니다. `stage-cross` 레이아웃은 ID 0/1/2/3 마커 중심을 각각 위/오른쪽/아래/왼쪽 기준점으로 보고 스테이지 좌표계를 만든 뒤, 중심에 놓인 PCB 영역만 남깁니다. 기본 `--pcb-inset-mm 0.5`는 PCB 외곽에서 안쪽으로 0.5 mm를 추가 제외해, 실물 배치·마커 검출·호모그래피의 작은 오차로 형광 A4 종이가 가장자리에 섞이는 일을 막습니다. 따라서 기본 30 x 30 mm PCB의 실제 계산 영역은 29 x 29 mm이며, 외곽까지 측정해야 할 때만 `--pcb-inset-mm 0`으로 설정하세요. PCB가 가리지 못한 모든 종이 영역은 `combined_mask`와 height map에서 제외됩니다.
 
@@ -317,7 +354,7 @@ python scripts/decode_scan.py \
   --analysis-roi aruco `
   --analysis-aruco-layout stage-cross `
   --analysis-aruco-ids 0,1,2,3 `
-  --analysis-marker-center-radius-mm 42 `
+  --analysis-marker-center-radius-mm 25 `
   --analysis-stage-diameter-mm 105 `
   --pcb-width-mm 30 `
   --pcb-height-mm 30 `
@@ -392,9 +429,9 @@ ArUco 마커 없이 로테이션 스테이지의 중심은 대략 맞지만, 180
 python scripts/run_gui.py
 ```
 
-그래픽 화면은 반복 측정용으로 정리되어 있습니다. 화면의 순서대로 ArUco 0°/180° 사진을 선택해 `ArUco 정합 계산 및 저장`을 실행하고, 빈 스테이지 0°/180° 스캔을 `기준면 검증 및 저장`으로 등록한 뒤, PCB 0°/180° 스캔 폴더와 결과 폴더를 지정해 `높이 계산 및 시각화`를 누르세요. ArUco 정합 JSON, 기준면, mm 보정 파일은 모두 GUI에서 선택·생성·연결할 수 있으며, 디코딩 임계값처럼 반복 측정에서 바꾸지 않는 세부값만 고정됩니다. 저장된 기준면이 없으면 일반 측정은 시작되지 않습니다.
+그래픽 화면은 반복 측정용으로 정리되어 있습니다. 빈 스테이지의 0°/90°/180°/270° 스캔을 `기준면 검증 및 저장`으로 등록한 뒤, PCB 네 방향의 스캔 폴더와 결과 폴더를 지정해 `높이 계산 및 시각화`를 누르세요. 하나의 스캔 루트를 선택하면 `angle_000/090/180/270`을 자동으로 채웁니다. GUI는 반경 25 mm, 검은 사각형 11.4 mm의 stage-cross 정합을 각 회전 뷰에 적용합니다. 저장된 각도별 기준면이나 네 방향 중 하나가 없으면 4방향 측정을 시작하지 않습니다. 기존 0°/180°만 지정한 2방향 작업도 계속 지원합니다.
 
-기준면 등록에는 빈 스테이지의 0°와 180° 스캔 폴더를 각각 지정합니다. 각 촬영은 PCB 대상 스캔과 같은 22개 패턴·노출·초점 설정을 사용해야 합니다. 프로그램은 충분한 유효 영역, 기준 평면 잔차, 국소 이상치 비율을 확인해 PCB 등 물체가 남은 기준면을 거부하며, 통과한 두 `absolute_phase` 배열을 `%LOCALAPPDATA%\PCB_FPP_Decoder\flat_stage_reference`에 저장합니다. 새 기준면이 검증을 통과하면 기존 기준면을 교체합니다.
+기준면 등록에는 빈 스테이지의 네 방향 스캔 폴더를 지정합니다. 각 촬영은 PCB 대상 스캔과 같은 22개 패턴·노출·초점 설정을 사용해야 합니다. 프로그램은 각 방향의 유효 영역, 기준 평면 잔차, 국소 이상치 비율을 확인해 PCB 등 물체가 남은 기준면을 거부하며, 통과한 네 `absolute_phase` 배열을 `%LOCALAPPDATA%\PCB_FPP_Decoder\flat_stage_reference`에 저장합니다. 새 기준면 전체가 검증을 통과한 뒤에만 활성 기준을 교체합니다.
 
 ## 디버거 실행 (개발용)
 
