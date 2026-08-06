@@ -547,6 +547,21 @@ class DecoderGui:
             anchor="w",
         ).pack(fill="x", pady=(0, 8))
 
+        processing = LabelFrame(outer, text="처리 설정", padx=8, pady=6)
+        processing.pack(fill="x", pady=(0, 8))
+        self._option_row(
+            processing,
+            "사인 위상 순서",
+            self.phase_convention_var,
+            ("swapped", "default", "negated"),
+        )
+        Label(
+            processing,
+            text="현재 PRO4500 패턴 순서에는 swapped를 사용합니다. 기준면과 높이 보정도 같은 값으로 만드세요.",
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", pady=(0, 2))
+
         stage = LabelFrame(outer, text="1. ArUco 회전 정합 계산", padx=8, pady=6)
         stage.pack(fill="x", pady=(0, 8))
         Label(
