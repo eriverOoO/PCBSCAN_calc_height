@@ -167,25 +167,39 @@ def default_reference_store_dir() -> Path:
 
 
 class ReferenceStore:
-    """Keeps the most recently accepted pair of 0/180-degree references."""
+    """Keeps validated flat-stage references for cardinal scan angles."""
 
     def __init__(self, root: Path | None = None) -> None:
         self.root = Path(root) if root is not None else default_reference_store_dir()
 
     @property
     def phase_0_path(self) -> Path:
-        return self.root / "reference_phase_0.npy"
+        return self.phase_path(0)
+
+    @property
+    def phase_90_path(self) -> Path:
+        return self.phase_path(90)
 
     @property
     def phase_180_path(self) -> Path:
-        return self.root / "reference_phase_180.npy"
+        return self.phase_path(180)
+
+    @property
+    def phase_270_path(self) -> Path:
+        return self.phase_path(270)
+
+    def phase_path(self, angle: int) -> Path:
+        return self.root / f"reference_phase_{int(angle) % 360}.npy"
 
     @property
     def metadata_path(self) -> Path:
         return self.root / "reference_metadata.json"
 
-    def is_available(self) -> bool:
-        return self.phase_0_path.is_file() and self.phase_180_path.is_file() and self.metadata_path.is_file()
+    def is_available(self, angles: tuple[int, ...] = (0, 180)) -> bool:
+        return all(self.phase_path(angle).is_file() for angle in angles) and self.metadata_path.is_file()
+
+    def is_four_view_available(self) -> bool:
+        return self.is_available((0, 90, 180, 270))
 
     def metadata(self) -> dict[str, object] | None:
         if not self.is_available():
@@ -204,19 +218,43 @@ class ReferenceStore:
         source_0: Path,
         source_180: Path,
     ) -> None:
-        if not report_0.valid or not report_180.valid:
+        self.save_multiview(
+            {0: phase_0, 180: phase_180},
+            {0: report_0, 180: report_180},
+            {0: source_0, 180: source_180},
+        )
+
+    def save_multiview(
+        self,
+        phases: dict[int, np.ndarray],
+        reports: dict[int, FlatnessReport],
+        sources: dict[int, Path],
+    ) -> None:
+        angles = tuple(sorted(int(angle) % 360 for angle in phases))
+        if not angles or set(reports) != set(phases) or set(sources) != set(phases):
+            raise ValueError("phases, reports, and sources must contain the same view angles")
+        if any(not reports[angle].valid for angle in angles):
             raise ValueError("only validated flat-stage references can be stored")
         self.root.mkdir(parents=True, exist_ok=True)
-        for target, phase in ((self.phase_0_path, phase_0), (self.phase_180_path, phase_180)):
+        for angle in angles:
+            target = self.phase_path(angle)
+            phase = phases[angle]
             temporary = target.with_suffix(".tmp")
             with temporary.open("wb") as handle:
                 np.save(handle, np.asarray(phase, dtype=np.float32))
             temporary.replace(target)
         metadata = {
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "source_0": str(Path(source_0).resolve()),
-            "source_180": str(Path(source_180).resolve()),
-            "flatness_0": report_0.as_dict(),
-            "flatness_180": report_180.as_dict(),
+            "view_angles_deg": list(angles),
+            "sources": {
+                str(angle): str(Path(sources[angle]).resolve()) for angle in angles
+            },
+            "flatness": {str(angle): reports[angle].as_dict() for angle in angles},
         }
+        if 0 in angles:
+            metadata["source_0"] = str(Path(sources[0]).resolve())
+            metadata["flatness_0"] = reports[0].as_dict()
+        if 180 in angles:
+            metadata["source_180"] = str(Path(sources[180]).resolve())
+            metadata["flatness_180"] = reports[180].as_dict()
         self.metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")

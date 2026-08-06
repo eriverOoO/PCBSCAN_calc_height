@@ -36,3 +36,20 @@ def test_reference_store_replaces_active_reference_pair(tmp_path: Path) -> None:
     assert store.is_available()
     assert np.allclose(np.load(store.phase_0_path), phase)
     assert np.allclose(np.load(store.phase_180_path), phase + 2)
+
+
+def test_reference_store_saves_all_four_cardinal_views(tmp_path: Path) -> None:
+    phase = np.indices((40, 50))[1].astype(np.float32)
+    report = validate_flat_stage(phase, np.ones_like(phase, dtype=bool))
+    store = ReferenceStore(tmp_path / "reference_four")
+    angles = (0, 90, 180, 270)
+
+    store.save_multiview(
+        {angle: phase + index for index, angle in enumerate(angles)},
+        {angle: report for angle in angles},
+        {angle: tmp_path / f"raw{angle}" for angle in angles},
+    )
+
+    assert store.is_four_view_available()
+    assert np.allclose(np.load(store.phase_270_path), phase + 3)
+    assert store.metadata()["view_angles_deg"] == [0, 90, 180, 270]
