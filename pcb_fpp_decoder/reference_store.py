@@ -191,6 +191,17 @@ class ReferenceStore:
     def phase_path(self, angle: int) -> Path:
         return self.root / f"reference_phase_{int(angle) % 360}.npy"
 
+    def gray_order_path(self, angle: int) -> Path:
+        return self.root / f"reference_gray_order_{int(angle) % 360}.npy"
+
+    @property
+    def gray_order_0_path(self) -> Path:
+        return self.gray_order_path(0)
+
+    @property
+    def gray_order_180_path(self) -> Path:
+        return self.gray_order_path(180)
+
     @property
     def metadata_path(self) -> Path:
         return self.root / "reference_metadata.json"
@@ -211,6 +222,9 @@ class ReferenceStore:
 
     def is_four_view_available(self) -> bool:
         return self.is_available((0, 90, 180, 270))
+
+    def is_gray_order_available(self, angles: tuple[int, ...] = (0, 180)) -> bool:
+        return all(self.gray_order_path(angle).is_file() for angle in angles)
 
     def metadata(self) -> dict[str, object] | None:
         if not self.is_available():
@@ -240,12 +254,15 @@ class ReferenceStore:
         phases: dict[int, np.ndarray],
         reports: dict[int, FlatnessReport],
         sources: dict[int, Path],
+        gray_orders: dict[int, np.ndarray] | None = None,
     ) -> None:
         angles = tuple(sorted(int(angle) % 360 for angle in phases))
         if not angles or set(reports) != set(phases) or set(sources) != set(phases):
             raise ValueError("phases, reports, and sources must contain the same view angles")
         if any(not reports[angle].valid for angle in angles):
             raise ValueError("only validated flat-stage references can be stored")
+        if gray_orders is not None and set(gray_orders) != set(phases):
+            raise ValueError("gray_orders must contain the same view angles as phases")
         self.root.mkdir(parents=True, exist_ok=True)
         for angle in angles:
             target = self.phase_path(angle)
@@ -254,6 +271,12 @@ class ReferenceStore:
             with temporary.open("wb") as handle:
                 np.save(handle, np.asarray(phase, dtype=np.float32))
             temporary.replace(target)
+            if gray_orders is not None:
+                gray_target = self.gray_order_path(angle)
+                gray_temporary = gray_target.with_suffix(".tmp")
+                with gray_temporary.open("wb") as handle:
+                    np.save(handle, np.asarray(gray_orders[angle], dtype=np.int32))
+                gray_temporary.replace(gray_target)
         metadata = {
             "created_at": datetime.now(timezone.utc).isoformat(),
             "view_angles_deg": list(angles),
@@ -261,6 +284,7 @@ class ReferenceStore:
                 str(angle): str(Path(sources[angle]).resolve()) for angle in angles
             },
             "flatness": {str(angle): reports[angle].as_dict() for angle in angles},
+            "gray_order_reference": gray_orders is not None,
         }
         if 0 in angles:
             metadata["source_0"] = str(Path(sources[0]).resolve())

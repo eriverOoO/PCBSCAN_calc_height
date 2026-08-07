@@ -888,6 +888,10 @@ class DecoderGui:
                 },
                 reports,
                 folders,
+                {
+                    angle: result.absolute.stripe_order_corrected
+                    for angle, result in results.items()
+                },
             )
             self.messages.put(
                 "기준면 검증 통과 및 영구 저장 완료. 이후 일반 스캔에 자동 적용됩니다.\n"
@@ -1202,6 +1206,10 @@ class DecoderGui:
         reference_phase_90 = None
         reference_phase_180 = None
         reference_phase_270 = None
+        reference_gray_order_0 = None
+        reference_gray_order_90 = None
+        reference_gray_order_180 = None
+        reference_gray_order_270 = None
         if use_saved_reference:
             if not self.reference_store.is_available(required_reference_angles):
                 raise ValueError(
@@ -1209,12 +1217,20 @@ class DecoderGui:
                     "GUI 2단계에서 해당 각도의 빈 스테이지 기준면을 등록하세요."
                 )
             reference_phase_0 = self.reference_store.phase_0_path
+            if self.reference_store.is_gray_order_available(required_reference_angles):
+                reference_gray_order_0 = self.reference_store.gray_order_path(0)
             if 90 in required_reference_angles:
                 reference_phase_90 = self.reference_store.phase_90_path
+                if reference_gray_order_0 is not None:
+                    reference_gray_order_90 = self.reference_store.gray_order_path(90)
             if 180 in required_reference_angles:
                 reference_phase_180 = self.reference_store.phase_180_path
+                if reference_gray_order_0 is not None:
+                    reference_gray_order_180 = self.reference_store.gray_order_path(180)
             if 270 in required_reference_angles:
                 reference_phase_270 = self.reference_store.phase_270_path
+                if reference_gray_order_0 is not None:
+                    reference_gray_order_270 = self.reference_store.gray_order_path(270)
         calibration_config = self._optional_path(self.calibration_config_var)
         fusion_transform = self._optional_path(self.fusion_transform_var)
         fusion_center = self._parse_fusion_center()
@@ -1269,6 +1285,10 @@ class DecoderGui:
             reference_phase_90=reference_phase_90,
             reference_phase_180=reference_phase_180,
             reference_phase_270=reference_phase_270,
+            reference_gray_order_0=reference_gray_order_0,
+            reference_gray_order_90=reference_gray_order_90,
+            reference_gray_order_180=reference_gray_order_180,
+            reference_gray_order_270=reference_gray_order_270,
             calibration_config=calibration_config,
             height_sign=_parse_float("높이 부호", self.height_sign_var.get()),
             fusion_mode=self.fusion_mode_var.get(),

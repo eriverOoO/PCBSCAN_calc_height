@@ -82,6 +82,14 @@ class DecodeConfig:
     gray_decode_mode: str = "auto"
     gray_threshold_mode: str = "dynamic_raw"
     gray_pair_min_contrast: float = 0.05
+    # Optional Gray-order map captured with the same flat-stage baseline.
+    # When supplied, it rejects broad Gray-code period errors before mm fitting.
+    reference_gray_order: Path | None = None
+    reference_gray_order_0: Path | None = None
+    reference_gray_order_90: Path | None = None
+    reference_gray_order_180: Path | None = None
+    reference_gray_order_270: Path | None = None
+    reference_gray_order_tolerance: int | None = 12
     sine_source: str = "corrected"
     phase_convention: str = "default"
     phase_direction: str = "normal"
@@ -168,6 +176,7 @@ class AbsolutePhaseResult:
     correction_mask: np.ndarray
     stripe_order_corrected: np.ndarray
     cycle_slip_mask: np.ndarray
+    reference_gray_order_mask: np.ndarray
     notes: list[str] = field(default_factory=list)
 
 
@@ -244,6 +253,11 @@ class PcbFppDecoder:
             raise ValueError(
                 "fusion_inconsistent_policy must be higher-confidence or invalid"
             )
+        if (
+            config.reference_gray_order_tolerance is not None
+            and config.reference_gray_order_tolerance < 0
+        ):
+            raise ValueError("reference_gray_order_tolerance must be non-negative or None")
         self.config = config
 
     def load_scan(self, input_dir: Path) -> PatternSet:
@@ -439,6 +453,7 @@ class PcbFppDecoder:
             correction_mask=correction_mask,
             stripe_order_corrected=corrected_k.astype(np.int32),
             cycle_slip_mask=cycle_slip_mask,
+            reference_gray_order_mask=np.zeros_like(combined_mask, dtype=bool),
             notes=notes,
         )
 
@@ -475,6 +490,24 @@ class PcbFppDecoder:
                 )
             reference = reference.astype(np.float32)
             mask &= np.isfinite(reference)
+            reference_order = self._load_reference_gray_order_if_available(view_angle=view_angle)
+            reference_order_mask = (
+                self._reference_gray_order_mismatch(
+                    absolute_phase.stripe_order_corrected,
+                    reference_order,
+                    mask,
+                )
+                if reference_order is not None
+                else np.zeros_like(mask, dtype=bool)
+            )
+            if np.any(reference_order_mask):
+                absolute_phase.reference_gray_order_mask = reference_order_mask
+                absolute_phase.cycle_slip_mask |= reference_order_mask
+                absolute_phase.combined_mask &= ~reference_order_mask
+                mask &= ~reference_order_mask
+                absolute_phase.notes.append(
+                    "reference-anchored Gray stripe-order validation rejected implausible period shifts"
+                )
             delta_phi = np.where(mask, phi - reference, np.nan).astype(np.float32)
             delta_phase = delta_phi
             reference_used = True
@@ -555,6 +588,31 @@ class PcbFppDecoder:
             delta_phase=delta_phase,
             calibration_parameters=calibration_parameters,
         )
+
+    def _reference_gray_order_mismatch(
+        self,
+        stripe_order: np.ndarray,
+        reference_order: np.ndarray,
+        valid_mask: np.ndarray,
+    ) -> np.ndarray:
+        """Reject Gray-period changes that cannot be a plausible object height.
+
+        The Gray-order baseline must be captured with the same flat-stage
+        reference.  This catches broad, spatially smooth Gray-code failures
+        that the local neighbor-only cycle-slip check cannot see.
+        """
+        tolerance = self.config.reference_gray_order_tolerance
+        if tolerance is None:
+            return np.zeros_like(valid_mask, dtype=bool)
+        if reference_order.shape != stripe_order.shape:
+            raise ValueError(
+                f"reference Gray order shape {reference_order.shape} does not match "
+                f"object stripe order shape {stripe_order.shape}"
+            )
+        difference = np.abs(
+            np.asarray(stripe_order, dtype=np.int32) - np.asarray(reference_order, dtype=np.int32)
+        )
+        return valid_mask & (difference > tolerance)
 
     def _decode_in_memory(
         self, input_dir: Path, view_angle: int | None = None
@@ -918,6 +976,10 @@ class PcbFppDecoder:
         save_mask(masks_dir / "saturation_mask.png", result.correction.saturation_mask)
         save_mask(masks_dir / "combined_mask.png", result.absolute.combined_mask)
         save_mask(masks_dir / "cycle_slip_mask.png", result.absolute.cycle_slip_mask)
+        save_mask(
+            masks_dir / "reference_gray_order_rejection_mask.png",
+            result.absolute.reference_gray_order_mask,
+        )
         if result.analysis_roi is not None:
             save_mask(masks_dir / "analysis_roi_mask.png", result.analysis_roi.mask)
             save_mask(masks_dir / "marker_space_mask.png", result.analysis_roi.marker_space_mask)
@@ -1560,6 +1622,9 @@ class PcbFppDecoder:
             "combined_mask_ratio": float(np.count_nonzero(absolute.combined_mask) / total),
             "saturation_pass_ratio": float(np.count_nonzero(correction.saturation_mask) / total),
             "correction_pixel_ratio": float(np.count_nonzero(absolute.correction_mask) / total),
+            "reference_gray_order_rejection_ratio": float(
+                np.count_nonzero(absolute.reference_gray_order_mask) / total
+            ),
         }
         modulation_values = phase.modulation[absolute.combined_mask]
         modulation_norm_values = phase.modulation_norm[absolute.combined_mask]
@@ -1579,6 +1644,7 @@ class PcbFppDecoder:
                 "gray_decode_mode": self.config.gray_decode_mode,
                 "gray_threshold_mode": self.config.gray_threshold_mode,
                 "gray_pair_min_contrast": self.config.gray_pair_min_contrast,
+                "reference_gray_order_tolerance": self.config.reference_gray_order_tolerance,
             },
             "mask_coverage": mask_stats,
             "signal_stats": _array_stats(correction.signal, correction.valid_mask),
@@ -1668,6 +1734,25 @@ class PcbFppDecoder:
             return ref_absolute.absolute_phase.astype(np.float32)
 
         return None
+
+    def _load_reference_gray_order_if_available(
+        self, view_angle: int | None = None
+    ) -> np.ndarray | None:
+        reference_order = self.config.reference_gray_order
+        if view_angle == 0:
+            reference_order = self.config.reference_gray_order_0 or reference_order
+        elif view_angle == 90:
+            reference_order = self.config.reference_gray_order_90 or reference_order
+        elif view_angle == 180:
+            reference_order = self.config.reference_gray_order_180 or reference_order
+        elif view_angle == 270:
+            reference_order = self.config.reference_gray_order_270 or reference_order
+        if reference_order is None:
+            return None
+        path = Path(reference_order).expanduser().resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"reference Gray order file does not exist: {path}")
+        return np.load(path).astype(np.int32)
 
     def _heuristic_boundary_correction(
         self,

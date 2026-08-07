@@ -116,6 +116,24 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.05,
         help="Minimum normalized normal/inverted Gray difference for valid pair bits",
     )
+    parser.add_argument(
+        "--reference-gray-order-tolerance",
+        type=int,
+        default=12,
+        help=(
+            "Maximum Gray stripe-order change allowed from the flat reference. "
+            "Use a negative value to disable this reference-anchored cycle check."
+        ),
+    )
+    parser.add_argument(
+        "--reference-gray-order",
+        type=Path,
+        help="Flat-stage stripe_order_k.npy used for reference-anchored Gray validation",
+    )
+    parser.add_argument("--reference-gray-order-0", type=Path)
+    parser.add_argument("--reference-gray-order-90", type=Path)
+    parser.add_argument("--reference-gray-order-180", type=Path)
+    parser.add_argument("--reference-gray-order-270", type=Path)
     parser.add_argument("--sine-source", choices=("corrected", "raw"), default="corrected")
     parser.add_argument(
         "--phase-convention",
@@ -393,6 +411,14 @@ def config_from_args(args: argparse.Namespace) -> DecodeConfig:
         gray_decode_mode=args.gray_decode_mode,
         gray_threshold_mode=args.gray_threshold_mode,
         gray_pair_min_contrast=args.gray_pair_min_contrast,
+        reference_gray_order_tolerance=(
+            None if args.reference_gray_order_tolerance < 0 else args.reference_gray_order_tolerance
+        ),
+        reference_gray_order=args.reference_gray_order,
+        reference_gray_order_0=args.reference_gray_order_0,
+        reference_gray_order_90=args.reference_gray_order_90,
+        reference_gray_order_180=args.reference_gray_order_180,
+        reference_gray_order_270=args.reference_gray_order_270,
         sine_source=args.sine_source,
         phase_convention=args.phase_convention,
         phase_direction=args.phase_direction,

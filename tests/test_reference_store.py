@@ -55,6 +55,24 @@ def test_reference_store_saves_all_four_cardinal_views(tmp_path: Path) -> None:
     assert store.metadata()["view_angles_deg"] == [0, 90, 180, 270]
 
 
+def test_reference_store_saves_gray_order_baselines_with_phase_reference(tmp_path: Path) -> None:
+    phase = np.indices((40, 50))[1].astype(np.float32)
+    report = validate_flat_stage(phase, np.ones_like(phase, dtype=bool))
+    store = ReferenceStore(tmp_path / "reference_gray")
+    gray_orders = {0: np.full(phase.shape, 20, dtype=np.int32), 180: np.full(phase.shape, 21, dtype=np.int32)}
+
+    store.save_multiview(
+        {0: phase, 180: phase + 2},
+        {0: report, 180: report},
+        {0: tmp_path / "raw0", 180: tmp_path / "raw180"},
+        gray_orders,
+    )
+
+    assert store.is_gray_order_available()
+    assert np.array_equal(np.load(store.gray_order_0_path), gray_orders[0])
+    assert store.metadata()["gray_order_reference"] is True
+
+
 def test_pair_metadata_does_not_reuse_stale_four_view_files(tmp_path: Path) -> None:
     phase = np.indices((40, 50))[1].astype(np.float32)
     report = validate_flat_stage(phase, np.ones_like(phase, dtype=bool))

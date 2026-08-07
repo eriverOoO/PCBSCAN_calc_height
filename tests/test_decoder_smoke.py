@@ -622,6 +622,35 @@ def test_reference_phase_subtraction_cancels_flat_projector_keystone(tmp_path):
     assert result.report["optical_setup"]["keystone_compensation"]["active"] is True
 
 
+def test_reference_gray_order_validation_rejects_broad_gray_code_shift(tmp_path):
+    reference_input = tmp_path / "captures" / "reference" / "deg_0"
+    object_input = tmp_path / "captures" / "object" / "deg_0"
+    reference_output = tmp_path / "processed" / "reference"
+    object_output = tmp_path / "processed" / "object"
+    _write_synthetic_scan(reference_input)
+    _write_synthetic_scan(object_input)
+    PcbFppDecoder(DecodeConfig()).decode(reference_input, reference_output)
+
+    # Flip the most-significant Gray plane.  The phase frames remain smooth,
+    # so this simulates a broad Gray-order failure that local cycle-slip
+    # checks can otherwise miss.
+    gray_msb = np.asarray(Image.open(object_input / "pattern_002.png"), dtype=np.uint8)
+    _save(object_input / "pattern_002.png", 255 - gray_msb)
+    result = PcbFppDecoder(
+        DecodeConfig(
+            height_mode="reference",
+            reference_phase=reference_output / "phase" / "absolute_phase.npy",
+            reference_gray_order=reference_output / "gray" / "stripe_order_k.npy",
+            reference_gray_order_tolerance=12,
+            median_filter=0,
+        )
+    ).decode(object_input, object_output)
+
+    assert result.report["mask_coverage"]["reference_gray_order_rejection_ratio"] > 0.4
+    assert np.count_nonzero(result.absolute.reference_gray_order_mask) > 0
+    assert (object_output / "masks" / "reference_gray_order_rejection_mask.png").exists()
+
+
 def test_inverted_gray_pair_decodes_low_contrast_gray_patterns(tmp_path):
     input_dir = tmp_path / "captures" / "scan_inv_gray" / "deg_0"
     output_dir = tmp_path / "processed" / "scan_inv_gray" / "deg_0"
