@@ -52,7 +52,7 @@ anchor일 뿐 projector와 camera response를 분리한 측정치가 아니므�
 XIMEA-observed 시뮬레이션과 한 페이지 결과를 모두 만든다.
 
 ```powershell
-.\run_ximea_observed_suite.bat
+.\run_validation_suite.bat --suite ximea-observed
 ```
 
 다른 위치를 직접 지정할 수도 있다.

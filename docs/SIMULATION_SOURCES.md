@@ -30,10 +30,10 @@ component in the upstream assembled CAD is physically shorter than 2 mm.
 
 ## Generate and compare all profiles
 
-Double-click `run_reference_board_suite.bat`, or run:
+Run the unified validation script with the reference-board suite:
 
 ```powershell
-.\run_reference_board_suite.bat
+.\run_validation_suite.bat --suite reference-board
 ```
 
 The command generates all three 4-view × 22-frame datasets, runs L0 and the
@@ -44,5 +44,5 @@ normal L1 stress profile, and opens:
 Choose a different stress envelope with, for example:
 
 ```powershell
-.\run_reference_board_suite.bat --stress-profile hard
+.\run_validation_suite.bat --suite reference-board --stress-profile hard
 ```

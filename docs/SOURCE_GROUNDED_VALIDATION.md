@@ -66,7 +66,7 @@ source-grounded와 기본 procedural v2 fixture는 `reference_board_max_height_m
 프로젝트 루트에서 다음 BAT를 더블클릭한다.
 
 ```text
-run_source_grounded_suite.bat
+run_validation_suite.bat --suite source-grounded
 ```
 
 또는 PowerShell에서 실행한다.

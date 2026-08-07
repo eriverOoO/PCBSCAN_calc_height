@@ -1,0 +1,423 @@
+
+PCB FPP Decoder EXE build
+=========================
+
+[1/4] Preparing Python virtual environment...
+[2/4] Installing build dependencies...
+Requirement already satisfied: pip in .\.venv\Lib\site-packages (26.2.1)
+WARNING: Retrying (Retry(total=4, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [WinError 10013] 액세스 권한에 의해 숨겨진 소켓에 액세스를 시도했습니다")': /simple/pip/
+WARNING: Retrying (Retry(total=3, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [WinError 10013] 액세스 권한에 의해 숨겨진 소켓에 액세스를 시도했습니다")': /simple/pip/
+WARNING: Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [WinError 10013] 액세스 권한에 의해 숨겨진 소켓에 액세스를 시도했습니다")': /simple/pip/
+WARNING: Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [WinError 10013] 액세스 권한에 의해 숨겨진 소켓에 액세스를 시도했습니다")': /simple/pip/
+WARNING: Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='pypi.org', port=443): Failed to establish a new connection: [WinError 10013] 액세스 권한에 의해 숨겨진 소켓에 액세스를 시도했습니다")': /simple/pip/
+Requirement already satisfied: pyinstaller in .\.venv\Lib\site-packages (6.21.0)
+Requirement already satisfied: numpy>=1.23 in .\.venv\Lib\site-packages (from -r requirements.txt (line 1)) (2.5.1)
+Requirement already satisfied: pillow>=9.0 in .\.venv\Lib\site-packages (from -r requirements.txt (line 2)) (12.3.0)
+Requirement already satisfied: matplotlib>=3.6 in .\.venv\Lib\site-packages (from -r requirements.txt (line 3)) (3.11.1)
+Requirement already satisfied: pytest>=7.0 in .\.venv\Lib\site-packages (from -r requirements.txt (line 4)) (9.1.1)
+Requirement already satisfied: scipy>=1.9 in .\.venv\Lib\site-packages (from -r requirements.txt (line 5)) (1.18.0)
+Requirement already satisfied: opencv-contrib-python>=4.7 in .\.venv\Lib\site-packages (from -r requirements.txt (line 6)) (5.0.0.93)
+Requirement already satisfied: OpenEXR<4,>=3.4 in .\.venv\Lib\site-packages (from -r requirements.txt (line 7)) (3.4.13)
+Requirement already satisfied: altgraph in .\.venv\Lib\site-packages (from pyinstaller) (0.17.5)
+Requirement already satisfied: packaging>=22.0 in .\.venv\Lib\site-packages (from pyinstaller) (26.2)
+Requirement already satisfied: pefile>=2022.5.30 in .\.venv\Lib\site-packages (from pyinstaller) (2024.8.26)
+Requirement already satisfied: pyinstaller-hooks-contrib>=2026.6 in .\.venv\Lib\site-packages (from pyinstaller) (2026.6)
+Requirement already satisfied: pywin32-ctypes>=0.2.1 in .\.venv\Lib\site-packages (from pyinstaller) (0.2.3)
+Requirement already satisfied: setuptools>=42.0.0 in .\.venv\Lib\site-packages (from pyinstaller) (83.0.0)
+Requirement already satisfied: contourpy>=1.0.1 in .\.venv\Lib\site-packages (from matplotlib>=3.6->-r requirements.txt (line 3)) (1.3.3)
+Requirement already satisfied: cycler>=0.10 in .\.venv\Lib\site-packages (from matplotlib>=3.6->-r requirements.txt (line 3)) (0.12.1)
+Requirement already satisfied: fonttools>=4.28.2 in .\.venv\Lib\site-packages (from matplotlib>=3.6->-r requirements.txt (line 3)) (4.63.0)
+Requirement already satisfied: kiwisolver>=1.3.1 in .\.venv\Lib\site-packages (from matplotlib>=3.6->-r requirements.txt (line 3)) (1.5.0)
+Requirement already satisfied: pyparsing>=3 in .\.venv\Lib\site-packages (from matplotlib>=3.6->-r requirements.txt (line 3)) (3.3.2)
+Requirement already satisfied: python-dateutil>=2.7 in .\.venv\Lib\site-packages (from matplotlib>=3.6->-r requirements.txt (line 3)) (2.9.0.post0)
+Requirement already satisfied: colorama>=0.4 in .\.venv\Lib\site-packages (from pytest>=7.0->-r requirements.txt (line 4)) (0.4.6)
+Requirement already satisfied: iniconfig>=1.0.1 in .\.venv\Lib\site-packages (from pytest>=7.0->-r requirements.txt (line 4)) (2.3.0)
+Requirement already satisfied: pluggy<2,>=1.5 in .\.venv\Lib\site-packages (from pytest>=7.0->-r requirements.txt (line 4)) (1.6.0)
+Requirement already satisfied: pygments>=2.7.2 in .\.venv\Lib\site-packages (from pytest>=7.0->-r requirements.txt (line 4)) (2.20.0)
+Requirement already satisfied: six>=1.5 in .\.venv\Lib\site-packages (from python-dateutil>=2.7->matplotlib>=3.6->-r requirements.txt (line 3)) (1.17.0)
+[3/5] Building decoder no-console GUI executable...
+141 INFO: PyInstaller: 6.21.0, contrib hooks: 2026.6
+141 INFO: Python: 3.12.13
+178 INFO: Platform: Windows-11-10.0.26200-SP0
+178 INFO: Python environment: C:\Users\LEELAB\Desktop\Non-planar_calc\.venv
+180 INFO: wrote C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Decoder.spec
+407 INFO: Module search paths (PYTHONPATH):
+['C:\\Users\\LEELAB\\Desktop\\Non-planar_calc',
+ 'C:\\Users\\LEELAB\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python312.zip',
+ 'C:\\Users\\LEELAB\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\DLLs',
+ 'C:\\Users\\LEELAB\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\Lib',
+ 'C:\\Users\\LEELAB\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python',
+ 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv',
+ 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages',
+ 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\scripts']
+814 INFO: Appending 'binaries' from .spec
+814 INFO: Appending 'datas' from .spec
+884 INFO: checking Analysis
+884 INFO: Building Analysis because Analysis-00.toc is non existent
+884 INFO: Looking for Python shared library...
+884 INFO: Using Python shared library: C:\Users\LEELAB\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python312.dll
+884 INFO: Running Analysis Analysis-00.toc
+884 INFO: Target bytecode optimization level: 0
+884 INFO: Initializing module dependency graph...
+884 INFO: Initializing module graph hook caches...
+904 INFO: Analyzing modules for base_library.zip ...
+1883 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+2627 INFO: Processing standard module hook 'hook-math.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+3937 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+4762 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+5193 INFO: Caching module dependency graph...
+5231 INFO: Analyzing C:\Users\LEELAB\Desktop\Non-planar_calc\scripts\run_gui.py
+5235 INFO: Processing pre-find-module-path hook 'hook-tkinter.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+5237 INFO: TclTkInfo: initializing cached Tcl/Tk info...
+5321 WARNING: tkinter installation is broken. It will be excluded from the application
+5323 INFO: Processing standard module hook 'hook-PIL.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+5440 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+5800 INFO: Processing standard module hook 'hook-numpy.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+6209 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+6211 INFO: SetuptoolsInfo: initializing cached setuptools info...
+7024 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+7164 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+7362 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+8014 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+8128 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+8279 INFO: Processing standard module hook 'hook-webbrowser.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+9784 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+10716 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+10917 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+11195 INFO: Processing standard module hook 'hook-cv2.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+11765 INFO: Processing standard module hook 'hook-matplotlib.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+12064 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+12372 INFO: Processing standard module hook 'hook-matplotlib.backend_bases.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+13094 INFO: Processing standard module hook 'hook-matplotlib.backends.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+13177 INFO: Processing standard module hook 'hook-matplotlib.pyplot.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+13994 INFO: Processing standard module hook 'hook-dateutil.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+14064 INFO: Processing pre-safe-import-module hook 'hook-six.moves.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+15438 INFO: Processing pre-safe-import-module hook 'hook-gi.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+15446 INFO: Processing standard module hook 'hook-scipy.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+16569 INFO: Processing standard module hook 'hook-scipy.special._ufuncs.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+16809 INFO: Processing standard module hook 'hook-scipy.linalg.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+18581 INFO: Processing standard module hook 'hook-scipy.spatial._ckdtree.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+19175 INFO: Processing standard module hook 'hook-scipy.spatial.transform.rotation.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+20072 INFO: Processing standard module hook 'hook-scipy.stats._stats.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+20540 INFO: Processing standard module hook 'hook-scipy.sparse.csgraph.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+21368 INFO: Processing standard module hook 'hook-scipy.special._ellip_harm_2.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+21452 INFO: Analyzing hidden import 'tkinter.filedialog'
+21452 ERROR: Hidden import 'tkinter.filedialog' not found
+21452 INFO: Analyzing hidden import 'tkinter.font'
+21452 ERROR: Hidden import 'tkinter.font' not found
+21452 INFO: Analyzing hidden import 'tkinter.messagebox'
+21452 ERROR: Hidden import 'tkinter.messagebox' not found
+21452 INFO: Analyzing hidden import 'tkinter.simpledialog'
+21452 ERROR: Hidden import 'tkinter.simpledialog' not found
+21452 INFO: Analyzing hidden import 'tkinter.ttk'
+21452 ERROR: Hidden import 'tkinter.ttk' not found
+21452 INFO: Analyzing hidden import 'tkinter.scrolledtext'
+21452 ERROR: Hidden import 'tkinter.scrolledtext' not found
+21452 INFO: Processing module hooks (post-graph stage)...
+21472 INFO: Processing standard module hook 'hook-matplotlib.backends.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+21473 INFO: Matplotlib backend selection method: automatic discovery of used backends
+21800 INFO: Trying determine the default backend as first importable candidate from the list: ['QtAgg', 'Qt5Agg', 'Gtk4Agg', 'Gtk3Agg', 'TkAgg', 'WxAgg']
+23675 INFO: Selected matplotlib backends: ['TkAgg']
+23973 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+24021 WARNING: Hidden import "scipy.special._cdflib" not found!
+24084 INFO: Performing binary vs. data reclassification (2340 entries)
+27215 INFO: Looking for ctypes DLLs
+27351 INFO: Analyzing run-time hooks ...
+27358 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+27371 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+27383 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+27398 INFO: Including run-time hook 'pyi_rth_mplconfig.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+27410 INFO: Processing pre-find-module-path hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+27423 INFO: Processing standard module hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+27542 INFO: Creating base_library.zip...
+27568 INFO: Looking for dynamic libraries
+33652 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\numpy.libs', 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\cv2\\../../x64/vc17/bin', 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\scipy.libs']
+33652 INFO: Extra DLL search directories (PATH): ['C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\cv2\\../../x64/vc17/bin']
+35446 INFO: Warnings written to C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Decoder\warn-PCB_FPP_Decoder.txt
+35537 INFO: Graph cross-reference written to C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Decoder\xref-PCB_FPP_Decoder.html
+35708 INFO: checking PYZ
+35708 INFO: Building PYZ because PYZ-00.toc is non existent
+35708 INFO: Building PYZ (ZlibArchive) C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Decoder\PYZ-00.pyz
+36775 INFO: Building PYZ (ZlibArchive) C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Decoder\PYZ-00.pyz completed successfully.
+36800 INFO: checking PKG
+36800 INFO: Building PKG because PKG-00.toc is non existent
+36800 INFO: Building PKG (CArchive) PCB_FPP_Decoder.pkg
+36844 INFO: Building PKG (CArchive) PCB_FPP_Decoder.pkg completed successfully.
+36845 INFO: Bootloader C:\Users\LEELAB\Desktop\Non-planar_calc\.venv\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+36845 INFO: checking EXE
+36845 INFO: Building EXE because EXE-00.toc is non existent
+36845 INFO: Building EXE from EXE-00.toc
+36845 INFO: Copying bootloader EXE to C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Decoder\PCB_FPP_Decoder.exe
+36942 INFO: Copying icon to EXE
+36997 INFO: Copying 0 resources to EXE
+36997 INFO: Embedding manifest in EXE
+37048 INFO: Appending PKG archive to EXE
+37149 INFO: Fixing EXE headers
+37444 INFO: Building EXE from EXE-00.toc completed successfully.
+37465 INFO: checking COLLECT
+37465 INFO: Building COLLECT because COLLECT-00.toc is non existent
+37465 INFO: Removing dir C:\Users\LEELAB\Desktop\Non-planar_calc\dist\PCB_FPP_Decoder
+40374 INFO: Building COLLECT COLLECT-00.toc
+44298 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+44355 INFO: Build complete! The results are available in: C:\Users\LEELAB\Desktop\Non-planar_calc\dist
+[4/5] Building decoder CLI executable...
+153 INFO: PyInstaller: 6.21.0, contrib hooks: 2026.6
+153 INFO: Python: 3.12.13
+193 INFO: Platform: Windows-11-10.0.26200-SP0
+193 INFO: Python environment: C:\Users\LEELAB\Desktop\Non-planar_calc\.venv
+195 INFO: wrote C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Decoder_CLI.spec
+414 INFO: Module search paths (PYTHONPATH):
+['C:\\Users\\LEELAB\\Desktop\\Non-planar_calc',
+ 'C:\\Users\\LEELAB\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python312.zip',
+ 'C:\\Users\\LEELAB\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\DLLs',
+ 'C:\\Users\\LEELAB\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\Lib',
+ 'C:\\Users\\LEELAB\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python',
+ 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv',
+ 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages',
+ 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\scripts']
+828 INFO: Appending 'binaries' from .spec
+828 INFO: Appending 'datas' from .spec
+918 INFO: checking Analysis
+918 INFO: Building Analysis because Analysis-00.toc is non existent
+918 INFO: Looking for Python shared library...
+918 INFO: Using Python shared library: C:\Users\LEELAB\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python312.dll
+918 INFO: Running Analysis Analysis-00.toc
+918 INFO: Target bytecode optimization level: 0
+918 INFO: Initializing module dependency graph...
+920 INFO: Initializing module graph hook caches...
+936 INFO: Analyzing modules for base_library.zip ...
+2169 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+2633 INFO: Processing standard module hook 'hook-math.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+3557 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+4558 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+4886 INFO: Caching module dependency graph...
+4923 INFO: Analyzing C:\Users\LEELAB\Desktop\Non-planar_calc\scripts\decode_scan.py
+5009 INFO: Processing standard module hook 'hook-numpy.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+5308 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+5309 INFO: SetuptoolsInfo: initializing cached setuptools info...
+6119 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+6258 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+6503 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+7119 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+7258 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+7461 INFO: Processing standard module hook 'hook-webbrowser.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+8529 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+9433 INFO: Processing standard module hook 'hook-cv2.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+9986 INFO: Processing standard module hook 'hook-PIL.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+10096 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+10561 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+10707 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+10926 INFO: Processing standard module hook 'hook-matplotlib.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+11249 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+11611 INFO: Processing standard module hook 'hook-matplotlib.backend_bases.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+12408 INFO: Processing standard module hook 'hook-matplotlib.backends.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+12491 INFO: Processing standard module hook 'hook-matplotlib.pyplot.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+13420 INFO: Processing standard module hook 'hook-dateutil.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+13507 INFO: Processing pre-safe-import-module hook 'hook-six.moves.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+15021 INFO: Processing pre-safe-import-module hook 'hook-gi.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+15031 INFO: Processing standard module hook 'hook-scipy.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+16042 INFO: Processing standard module hook 'hook-scipy.special._ufuncs.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+16319 INFO: Processing standard module hook 'hook-scipy.linalg.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+18319 INFO: Processing standard module hook 'hook-scipy.spatial._ckdtree.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+18950 INFO: Processing standard module hook 'hook-scipy.spatial.transform.rotation.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+19968 INFO: Processing standard module hook 'hook-scipy.stats._stats.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+20460 INFO: Processing standard module hook 'hook-scipy.sparse.csgraph.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+21330 INFO: Processing standard module hook 'hook-scipy.special._ellip_harm_2.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+21412 INFO: Analyzing hidden import 'PIL.ImageTk'
+21420 INFO: Analyzing hidden import 'tkinter'
+21421 INFO: Processing pre-find-module-path hook 'hook-tkinter.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+21422 INFO: TclTkInfo: initializing cached Tcl/Tk info...
+21514 WARNING: tkinter installation is broken. It will be excluded from the application
+21515 ERROR: Hidden import 'tkinter' not found
+21515 INFO: Analyzing hidden import 'tkinter.filedialog'
+21639 INFO: Processing standard module hook 'hook-_tkinter.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+21674 INFO: Analyzing hidden import 'tkinter.font'
+21680 INFO: Analyzing hidden import 'tkinter.ttk'
+21709 INFO: Analyzing hidden import 'tkinter.scrolledtext'
+21711 INFO: Processing module hooks (post-graph stage)...
+21730 INFO: Processing standard module hook 'hook-matplotlib.backends.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+21730 INFO: Matplotlib backend selection method: automatic discovery of used backends
+22066 INFO: Trying determine the default backend as first importable candidate from the list: ['QtAgg', 'Qt5Agg', 'Gtk4Agg', 'Gtk3Agg', 'TkAgg', 'WxAgg']
+24233 INFO: Selected matplotlib backends: ['TkAgg']
+24627 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+24687 WARNING: Hidden import "scipy.special._cdflib" not found!
+24728 INFO: Processing standard module hook 'hook-_tkinter.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+24768 INFO: Performing binary vs. data reclassification (2340 entries)
+24995 INFO: Looking for ctypes DLLs
+25107 INFO: Analyzing run-time hooks ...
+25112 INFO: Including run-time hook 'pyi_rth__tkinter.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+25125 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+25127 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+25128 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+25130 INFO: Including run-time hook 'pyi_rth_mplconfig.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+25131 INFO: Processing pre-find-module-path hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+25132 INFO: Processing standard module hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+25205 INFO: Creating base_library.zip...
+25225 INFO: Looking for dynamic libraries
+26979 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\numpy.libs', 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\cv2\\../../x64/vc17/bin', 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\scipy.libs']
+26979 INFO: Extra DLL search directories (PATH): ['C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\cv2\\../../x64/vc17/bin']
+28492 INFO: Warnings written to C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Decoder_CLI\warn-PCB_FPP_Decoder_CLI.txt
+28588 INFO: Graph cross-reference written to C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Decoder_CLI\xref-PCB_FPP_Decoder_CLI.html
+28719 INFO: checking PYZ
+28719 INFO: Building PYZ because PYZ-00.toc is non existent
+28719 INFO: Building PYZ (ZlibArchive) C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Decoder_CLI\PYZ-00.pyz
+29939 INFO: Building PYZ (ZlibArchive) C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Decoder_CLI\PYZ-00.pyz completed successfully.
+29962 INFO: checking PKG
+29962 INFO: Building PKG because PKG-00.toc is non existent
+29962 INFO: Building PKG (CArchive) PCB_FPP_Decoder_CLI.pkg
+29995 INFO: Building PKG (CArchive) PCB_FPP_Decoder_CLI.pkg completed successfully.
+29996 INFO: Bootloader C:\Users\LEELAB\Desktop\Non-planar_calc\.venv\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\run.exe
+29996 INFO: checking EXE
+29996 INFO: Building EXE because EXE-00.toc is non existent
+29996 INFO: Building EXE from EXE-00.toc
+29996 INFO: Copying bootloader EXE to C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Decoder_CLI\PCB_FPP_Decoder_CLI.exe
+30093 INFO: Copying icon to EXE
+30149 INFO: Copying 0 resources to EXE
+30149 INFO: Embedding manifest in EXE
+30197 INFO: Appending PKG archive to EXE
+30309 INFO: Fixing EXE headers
+30680 INFO: Building EXE from EXE-00.toc completed successfully.
+30714 INFO: checking COLLECT
+30714 INFO: Building COLLECT because COLLECT-00.toc is non existent
+30714 INFO: Removing dir C:\Users\LEELAB\Desktop\Non-planar_calc\dist\PCB_FPP_Decoder_CLI
+31826 INFO: Building COLLECT COLLECT-00.toc
+35418 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+35483 INFO: Build complete! The results are available in: C:\Users\LEELAB\Desktop\Non-planar_calc\dist
+[5/5] Building debugger no-console GUI executable...
+146 INFO: PyInstaller: 6.21.0, contrib hooks: 2026.6
+147 INFO: Python: 3.12.13
+191 INFO: Platform: Windows-11-10.0.26200-SP0
+191 INFO: Python environment: C:\Users\LEELAB\Desktop\Non-planar_calc\.venv
+191 INFO: wrote C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Debugger.spec
+458 INFO: Module search paths (PYTHONPATH):
+['C:\\Users\\LEELAB\\Desktop\\Non-planar_calc',
+ 'C:\\Users\\LEELAB\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python312.zip',
+ 'C:\\Users\\LEELAB\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\DLLs',
+ 'C:\\Users\\LEELAB\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\Lib',
+ 'C:\\Users\\LEELAB\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python',
+ 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv',
+ 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages',
+ 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\scripts']
+853 INFO: Appending 'binaries' from .spec
+855 INFO: Appending 'datas' from .spec
+926 INFO: checking Analysis
+926 INFO: Building Analysis because Analysis-00.toc is non existent
+926 INFO: Looking for Python shared library...
+926 INFO: Using Python shared library: C:\Users\LEELAB\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python312.dll
+926 INFO: Running Analysis Analysis-00.toc
+926 INFO: Target bytecode optimization level: 0
+926 INFO: Initializing module dependency graph...
+928 INFO: Initializing module graph hook caches...
+942 INFO: Analyzing modules for base_library.zip ...
+2181 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+2582 INFO: Processing standard module hook 'hook-math.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+2747 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+3649 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+4880 INFO: Caching module dependency graph...
+4929 INFO: Analyzing C:\Users\LEELAB\Desktop\Non-planar_calc\scripts\run_debug_gui.py
+4933 INFO: Processing pre-find-module-path hook 'hook-tkinter.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+4935 INFO: TclTkInfo: initializing cached Tcl/Tk info...
+5023 WARNING: tkinter installation is broken. It will be excluded from the application
+5026 INFO: Processing standard module hook 'hook-PIL.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+5161 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+5568 INFO: Processing standard module hook 'hook-numpy.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+5919 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+5921 INFO: SetuptoolsInfo: initializing cached setuptools info...
+6799 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+6967 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+7209 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+7762 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+7876 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+8044 INFO: Processing standard module hook 'hook-webbrowser.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+9565 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+10541 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+10693 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+10968 INFO: Processing standard module hook 'hook-cv2.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+11644 INFO: Processing standard module hook 'hook-matplotlib.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+11955 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+12260 INFO: Processing standard module hook 'hook-matplotlib.backend_bases.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+13078 INFO: Processing standard module hook 'hook-matplotlib.backends.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+13163 INFO: Processing standard module hook 'hook-matplotlib.pyplot.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+14003 INFO: Processing standard module hook 'hook-dateutil.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+14088 INFO: Processing pre-safe-import-module hook 'hook-six.moves.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+15581 INFO: Processing pre-safe-import-module hook 'hook-gi.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+15595 INFO: Processing standard module hook 'hook-scipy.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+16668 INFO: Processing standard module hook 'hook-scipy.special._ufuncs.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+16894 INFO: Processing standard module hook 'hook-scipy.linalg.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+18862 INFO: Processing standard module hook 'hook-scipy.spatial._ckdtree.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+19542 INFO: Processing standard module hook 'hook-scipy.spatial.transform.rotation.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+20511 INFO: Processing standard module hook 'hook-scipy.stats._stats.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+21051 INFO: Processing standard module hook 'hook-scipy.sparse.csgraph.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+21851 INFO: Processing standard module hook 'hook-scipy.special._ellip_harm_2.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+22153 INFO: Analyzing hidden import 'tkinter.filedialog'
+22153 ERROR: Hidden import 'tkinter.filedialog' not found
+22153 INFO: Analyzing hidden import 'tkinter.font'
+22153 ERROR: Hidden import 'tkinter.font' not found
+22153 INFO: Analyzing hidden import 'tkinter.messagebox'
+22153 ERROR: Hidden import 'tkinter.messagebox' not found
+22153 INFO: Analyzing hidden import 'tkinter.simpledialog'
+22153 ERROR: Hidden import 'tkinter.simpledialog' not found
+22153 INFO: Analyzing hidden import 'tkinter.ttk'
+22153 ERROR: Hidden import 'tkinter.ttk' not found
+22153 INFO: Analyzing hidden import 'tkinter.scrolledtext'
+22153 ERROR: Hidden import 'tkinter.scrolledtext' not found
+22153 INFO: Processing module hooks (post-graph stage)...
+22187 INFO: Processing standard module hook 'hook-matplotlib.backends.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+22187 INFO: Matplotlib backend selection method: automatic discovery of used backends
+22509 INFO: Trying determine the default backend as first importable candidate from the list: ['QtAgg', 'Qt5Agg', 'Gtk4Agg', 'Gtk3Agg', 'TkAgg', 'WxAgg']
+24529 INFO: Selected matplotlib backends: ['TkAgg']
+24833 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+24888 WARNING: Hidden import "scipy.special._cdflib" not found!
+24971 INFO: Performing binary vs. data reclassification (2340 entries)
+25267 INFO: Looking for ctypes DLLs
+25413 INFO: Analyzing run-time hooks ...
+25419 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+25422 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+25424 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+25425 INFO: Including run-time hook 'pyi_rth_mplconfig.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+25427 INFO: Processing pre-find-module-path hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+25429 INFO: Processing standard module hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+25508 INFO: Creating base_library.zip...
+25527 INFO: Looking for dynamic libraries
+27209 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\numpy.libs', 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\cv2\\../../x64/vc17/bin', 'C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\scipy.libs']
+27209 INFO: Extra DLL search directories (PATH): ['C:\\Users\\LEELAB\\Desktop\\Non-planar_calc\\.venv\\Lib\\site-packages\\cv2\\../../x64/vc17/bin']
+28724 INFO: Warnings written to C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Debugger\warn-PCB_FPP_Debugger.txt
+28815 INFO: Graph cross-reference written to C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Debugger\xref-PCB_FPP_Debugger.html
+28937 INFO: checking PYZ
+28937 INFO: Building PYZ because PYZ-00.toc is non existent
+28937 INFO: Building PYZ (ZlibArchive) C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Debugger\PYZ-00.pyz
+30096 INFO: Building PYZ (ZlibArchive) C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Debugger\PYZ-00.pyz completed successfully.
+30118 INFO: checking PKG
+30118 INFO: Building PKG because PKG-00.toc is non existent
+30118 INFO: Building PKG (CArchive) PCB_FPP_Debugger.pkg
+30148 INFO: Building PKG (CArchive) PCB_FPP_Debugger.pkg completed successfully.
+30149 INFO: Bootloader C:\Users\LEELAB\Desktop\Non-planar_calc\.venv\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+30149 INFO: checking EXE
+30149 INFO: Building EXE because EXE-00.toc is non existent
+30149 INFO: Building EXE from EXE-00.toc
+30149 INFO: Copying bootloader EXE to C:\Users\LEELAB\AppData\Local\Temp\PCB_FPP_Decoder_pyinstaller_22912\PCB_FPP_Debugger\PCB_FPP_Debugger.exe
+30194 INFO: Copying icon to EXE
+30237 INFO: Copying 0 resources to EXE
+30237 INFO: Embedding manifest in EXE
+30283 INFO: Appending PKG archive to EXE
+30379 INFO: Fixing EXE headers
+30662 INFO: Building EXE from EXE-00.toc completed successfully.
+30682 INFO: checking COLLECT
+30682 INFO: Building COLLECT because COLLECT-00.toc is non existent
+30682 INFO: Removing dir C:\Users\LEELAB\Desktop\Non-planar_calc\dist\PCB_FPP_Debugger
+31696 INFO: Building COLLECT COLLECT-00.toc
+34913 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+34961 INFO: Build complete! The results are available in: C:\Users\LEELAB\Desktop\Non-planar_calc\dist
+
+Build complete.
+GUI EXE: dist\PCB_FPP_Decoder\PCB_FPP_Decoder.exe
+CLI EXE: dist\PCB_FPP_Decoder_CLI\PCB_FPP_Decoder_CLI.exe
+Debug EXE: dist\PCB_FPP_Debugger\PCB_FPP_Debugger.exe
+
+Normal users should run:
+  dist\PCB_FPP_Decoder\PCB_FPP_Decoder.exe
+Debugging tool:
+  dist\PCB_FPP_Debugger\PCB_FPP_Debugger.exe
+or double-click:
+  PCB_FPP_Decoder.vbs
+

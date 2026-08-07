@@ -2,18 +2,36 @@
 setlocal
 cd /d "%~dp0"
 
+set "SUITE=%~1"
 set "VALIDATION_TOOL=tools\run_validation_suite.py"
 set "FAILURE_MESSAGE=Validation suite completed with errors."
 set "RESULT_PATH=validation_results\automated_suite\index.html"
 
-if /I "%~1"=="--runner" (
-  set "VALIDATION_TOOL=%~2"
-  set "FAILURE_MESSAGE=%~3"
-  set "RESULT_PATH=%~4"
+if "%SUITE%"=="" set "SUITE=default"
+if /I "%SUITE%"=="--suite" (
+  set "SUITE=%~2"
   shift
   shift
-  shift
-  shift
+)
+
+if /I "%SUITE%"=="reference-board" (
+  set "VALIDATION_TOOL=tools\run_reference_board_suite.py"
+  set "RESULT_PATH=validation_results\reference_board\index.html"
+)
+if /I "%SUITE%"=="source-grounded" (
+  set "VALIDATION_TOOL=tools\run_source_grounded_suite.py"
+  set "FAILURE_MESSAGE=Source-grounded validation completed with errors."
+  set "RESULT_PATH=validation_results\source_grounded\source_grounded_index.html"
+)
+if /I "%SUITE%"=="ximea-observed" (
+  set "VALIDATION_TOOL=tools\run_ximea_observed_suite.py"
+  set "FAILURE_MESSAGE=XIMEA-observed validation completed with errors."
+  set "RESULT_PATH=validation_results\ximea_observed\ximea_observed_index.html"
+)
+if /I not "%SUITE%"=="default" if /I not "%SUITE%"=="reference-board" if /I not "%SUITE%"=="source-grounded" if /I not "%SUITE%"=="ximea-observed" (
+  echo Unknown validation suite: %SUITE%
+  echo Use: default, reference-board, source-grounded, or ximea-observed.
+  exit /b 2
 )
 
 if not exist ".venv\Scripts\python.exe" (

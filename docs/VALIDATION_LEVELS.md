@@ -162,7 +162,7 @@ PBRT dataset의 Gray+6-step sine와 FPP-ML-Bench의 52 frame은 production 22 fr
 
 ### 출처 기반 실제 영상/센서 감사
 
-`run_source_grounded_suite.bat`은 checksum이 고정된 scanner-sim 실제 HDR 샘플을
+`run_validation_suite.bat --suite source-grounded`은 checksum이 고정된 scanner-sim 실제 HDR 샘플을
 준비하고, Thorlabs CS126MU 공개 사양 중 full-well/read-noise/12-bit ADC만 적용한 L1
 case를 실행한 뒤 두 결과를 한 시작 화면에서 연다.
 
@@ -197,7 +197,7 @@ ideal 준비, L0, 네 L1 profile의 quick seed, decode/report와 HTML 비교 화
 sheet, 결과 overview, 0°/180° valid ratio와 phase MAE/P95가 함께 표시된다.
 
 공개 CAD의 치수와 부품 배치 특성을 반영한 BME280, Simple light sensor, W5500
-source-informed profile 비교는 `run_reference_board_suite.bat`으로 실행한다. 이는 CAD
+source-informed profile 비교는 `run_validation_suite.bat --suite reference-board`로 실행한다. 이는 CAD
 원본의 물리 렌더가 아닌 2.5D raster 근사이며 자세한 출처와 제한은
 `docs/SIMULATION_SOURCES.md`를 따른다. 세 profile의 PCB 상면 기준 상대 높이는 측정
 조건에 맞춰 1.9 mm 이하로 제한한다.

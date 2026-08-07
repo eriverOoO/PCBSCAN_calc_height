@@ -441,7 +441,7 @@ python scripts/run_gui.py
 
 정리 도구 `scripts\clean_generated.py`는 기존 `dist` 실행 파일을 기본적으로 보존합니다. `dist`까지 삭제하려면 `--include-dist --execute`를 명시해야 합니다.
 
-현재 PC에서 디버거 EXE를 유지하거나 다시 만들려면 `build_debugger.bat`를 실행하세요. 이 스크립트는 `dist\PCB_FPP_Debugger\PCB_FPP_Debugger.exe`만 생성하며, 일반 GUI와 CLI 배포본은 만들지 않습니다.
+디버거 EXE를 포함한 배포본을 다시 만들려면 `build.bat`를 실행하세요.
 
 의존성을 갱신해야 할 때만 아래처럼 실행합니다.
 
@@ -648,12 +648,12 @@ clean/normal/hard/extreme L1 cases and open the comparison dashboard. Each case
 shows the actual 4-view x 22-pattern decoder inputs, result overview, valid
 ratio, phase MAE, and phase P95 together.
 
-Run `run_reference_board_suite.bat` for the source-informed Adafruit BME280,
+Run `run_validation_suite.bat --suite reference-board` for the source-informed Adafruit BME280,
 Soldered Simple light sensor, and Soldered W5500 comparison suite. Applied board
 dimensions, approximation limits, sources, and licenses are documented in
 [`docs/SIMULATION_SOURCES.md`](docs/SIMULATION_SOURCES.md).
 
-Run `run_source_grounded_suite.bat` for the source-grounded audit. It downloads
+Run `run_validation_suite.bat --suite source-grounded` for the source-grounded audit. It downloads
 and SHA-256 verifies three small physical HDR samples from scanner-sim, runs a
 CS126MU manufacturer-bounded sensor case plus a separate case that applies the
 measured physical `background.exr` as a bounded low-frequency image-domain proxy,
